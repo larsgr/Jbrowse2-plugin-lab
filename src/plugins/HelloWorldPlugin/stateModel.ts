@@ -1,10 +1,9 @@
 import { types } from 'mobx-state-tree'
 import type { IAnyModelType } from 'mobx-state-tree'
 
-// Use a simple random id to avoid MST version incompatibility with
-// @jbrowse/core's bundled mobx-state-tree (ElementId uses the nested version)
+// Use crypto.randomUUID() for collision-free IDs in the browser
 const HelloWorldWidgetModel = types.model('HelloWorldWidget', {
-  id: types.optional(types.string, () => `helloWorldWidget-${Math.random().toString(36).slice(2, 9)}`),
+  id: types.optional(types.string, () => crypto.randomUUID()),
   type: types.literal('HelloWorldWidget'),
 })
 

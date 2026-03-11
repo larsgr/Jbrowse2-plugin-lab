@@ -14,7 +14,11 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // xz-decompress maps stream/web to false for browser environments
+      // xz-decompress (a JBrowse2 dependency) includes `stream/web` which is a
+      // Node.js built-in. The package maps it to `false` for browser environments
+      // (see its package.json "browser" field), but Vite resolves the polyfilled
+      // `stream` module first, then fails trying to find a `web` sub-export.
+      // Mapping to an empty module replicates the intended "not available" behavior.
       'stream/web': 'data:text/javascript,export default {}',
     },
   },
@@ -26,7 +30,7 @@ export default defineConfig({
     outDir: 'dist',
   },
   optimizeDeps: {
-    include: ['@jbrowse/core', '@jbrowse/react-linear-genome-view'],
+    exclude: ['@jbrowse/core'],
   },
 })
 

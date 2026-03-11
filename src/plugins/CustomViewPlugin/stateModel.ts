@@ -11,14 +11,14 @@ const COMPLEMENT_MAP: Record<string, string> = {
 
 const SequenceStatsViewModelDefinition = types
   .model('SequenceStatsView', {
-    id: types.optional(types.string, () => `seqStats-${Math.random().toString(36).slice(2, 9)}`),
+    id: types.optional(types.string, () => crypto.randomUUID()),
     type: types.literal('SequenceStatsView'),
     displayName: types.optional(types.string, 'Sequence Stats'),
     sequence: types.optional(types.string, 'ATGCGATCGATCGTAGCTAGCATCGATCG'),
   })
   .actions(self => ({
     setSequence(seq: string) {
-      // Filter to valid DNA characters only
+      // Normalize user input: keep only valid DNA nucleotide characters (A/T/G/C/N)
       self.sequence = seq.replace(/[^ATGCN]/g, '')
     },
     setWidth(_newWidth: number) {

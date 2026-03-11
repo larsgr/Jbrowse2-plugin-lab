@@ -36,6 +36,8 @@ export default class FeatureCountPlugin extends Plugin {
         }) => {
           const view = session.views[0]
           if (!view) {
+            // NOTE: In a real plugin, prefer session.notify() or a WidgetType
+            // over alert() for non-blocking, accessible user feedback.
             alert('No active view found.')
             return
           }
@@ -47,6 +49,8 @@ export default class FeatureCountPlugin extends Plugin {
                   .map(r => `${r.refName}:${r.start}..${r.end}`)
                   .join(', ')
               : 'none'
+          // NOTE: Using alert() here for simplicity in the demo.
+          // In a real plugin, use session.notify() or a custom WidgetType panel.
           alert(
             `FeatureCountPlugin Report\n\n` +
               `Active tracks: ${trackCount}\n` +
@@ -63,6 +67,8 @@ export default class FeatureCountPlugin extends Plugin {
         label: 'About Plugin Lab',
         icon: InfoIcon,
         onClick: () => {
+          // NOTE: Using alert() here for simplicity in the demo.
+          // In a real plugin, use a custom WidgetType for rich, accessible UI.
           alert(
             'JBrowse2 Plugin Lab\n\n' +
               'This demo showcases different JBrowse2 plugin types:\n\n' +

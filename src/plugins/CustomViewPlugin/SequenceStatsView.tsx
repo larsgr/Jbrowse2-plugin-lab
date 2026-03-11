@@ -10,6 +10,7 @@ const NUCLEOTIDE_COLORS: Record<string, string> = {
 
 // The model is typed as `any` here because the stateModel is cast to
 // IAnyModelType to bridge the MST version gap between root and @jbrowse/core
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const SequenceStatsView = observer(({ model }: { model: any }) => {
   const sequence: string = model.sequence ?? ''
   const stats = model.stats as {
