@@ -28,11 +28,11 @@ const assembly = {
   },
   refNameAliases: {
     adapter: {
-      type: 'RefNameAliasAdapter',
-      location: {
-        uri: `${JBROWSE_CDN}/volvox_aliases.txt`,
-        locationType: 'UriLocation',
-      },
+      type: 'FromConfigAdapter',
+      features: [
+        { refName: 'ctgA', uniqueId: 'alias1', aliases: ['A', 'contigA'] },
+        { refName: 'ctgB', uniqueId: 'alias2', aliases: ['B', 'contigB'] },
+      ],
     },
   },
 }
