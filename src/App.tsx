@@ -9,8 +9,9 @@ import CustomViewPlugin from './plugins/CustomViewPlugin'
 import './App.css'
 
 // Volvox assembly — small example genome bundled with JBrowse2 test data
-// served from the public JBrowse2 CDN for demo purposes
-const JBROWSE_CDN = 'https://jbrowse.org/genomes/volvox'
+// served from the jbrowse-components GitHub test_data directory
+const VOLVOX_DATA_URL =
+  'https://raw.githubusercontent.com/GMOD/jbrowse-components/main/test_data/volvox'
 
 const assembly = {
   name: 'volvox',
@@ -21,7 +22,7 @@ const assembly = {
     adapter: {
       type: 'TwoBitAdapter',
       twoBitLocation: {
-        uri: `${JBROWSE_CDN}/volvox.2bit`,
+        uri: `${VOLVOX_DATA_URL}/volvox.2bit`,
         locationType: 'UriLocation',
       },
     },
@@ -47,12 +48,12 @@ const tracks = [
     adapter: {
       type: 'Gff3TabixAdapter',
       gffGzLocation: {
-        uri: `${JBROWSE_CDN}/volvox.sort.gff3.gz`,
+        uri: `${VOLVOX_DATA_URL}/volvox.sort.gff3.gz`,
         locationType: 'UriLocation',
       },
       index: {
         location: {
-          uri: `${JBROWSE_CDN}/volvox.sort.gff3.gz.tbi`,
+          uri: `${VOLVOX_DATA_URL}/volvox.sort.gff3.gz.tbi`,
           locationType: 'UriLocation',
         },
       },
@@ -67,7 +68,7 @@ const tracks = [
     adapter: {
       type: 'BigWigAdapter',
       bigWigLocation: {
-        uri: `${JBROWSE_CDN}/volvox-sorted.bam.coverage.bw`,
+        uri: `${VOLVOX_DATA_URL}/volvox-sorted.bam.coverage.bw`,
         locationType: 'UriLocation',
       },
     },
