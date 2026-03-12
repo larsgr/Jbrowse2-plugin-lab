@@ -107,6 +107,8 @@ body {
 }
 
 .viewer-wrapper {
+  height: 72vh;
+  min-height: 620px;
   border: 1px solid #ddd;
   border-radius: 8px;
   overflow: hidden;

@@ -38,7 +38,9 @@ export default class CustomViewPlugin extends Plugin {
         label: 'Open Sequence Stats View',
         icon: AnalyticsIcon,
         onClick: (session: { addView: (type: string, initialState: Record<string, unknown>) => void }) => {
-          session.addView('SequenceStatsView', {})
+          session.addView('SequenceStatsView', {
+            id: `sequenceStatsView-${Date.now()}`,
+          })
         },
       })
     }
