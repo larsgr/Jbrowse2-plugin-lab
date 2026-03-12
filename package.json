@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@fontsource/roboto": "^5.2.10",
-    "@jbrowse/core": "^3.7.0",
-    "@jbrowse/react-linear-genome-view": "^3.1.0",
+    "@jbrowse/core": "^4.1.14",
+    "@jbrowse/react-app2": "^4.1.14",
     "mobx": "^6.15.0",
     "mobx-react": "^9.2.1",
     "mobx-state-tree": "^5.4.2",

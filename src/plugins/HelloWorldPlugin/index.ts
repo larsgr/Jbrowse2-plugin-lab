@@ -38,7 +38,10 @@ export default class HelloWorldPlugin extends Plugin {
         label: 'Open Hello World Widget',
         icon: WavingHandIcon,
         onClick: (session: { showWidget: (widget: unknown) => void; addWidget: (type: string, id: string) => unknown }) => {
-          const widget = session.addWidget('HelloWorldWidget', 'helloWorldWidget')
+          const widget = session.addWidget(
+            'HelloWorldWidget',
+            `helloWorldWidget-${Date.now()}`,
+          )
           session.showWidget(widget)
         },
       })
