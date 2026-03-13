@@ -35,6 +35,37 @@ const config = {
         },
       },
     },
+    {
+      name: 'Ssal_v3.1',
+      sequence: {
+        type: 'ReferenceSequenceTrack',
+        trackId: 'Ssal_v3.1-refseqTrack',
+        adapter: {
+          type: 'BgzipFastaAdapter',
+          fastaLocation: {
+            uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/sequence_Ensembl/Salmo_salar.Ssal_v3.1.dna_sm.toplevel.fa.gz',
+            locationType: 'UriLocation',
+          },
+          faiLocation: {
+            uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/sequence_Ensembl/Salmo_salar.Ssal_v3.1.dna_sm.toplevel.fa.gz.fai',
+            locationType: 'UriLocation',
+          },
+          gziLocation: {
+            uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/sequence_Ensembl/Salmo_salar.Ssal_v3.1.dna_sm.toplevel.fa.gz.gzi',
+            locationType: 'UriLocation',
+          },
+        },
+      },
+      refNameAliases: {
+        adapter: {
+          type: 'RefNameAliasAdapter',
+          location: {
+            uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/alias.txt',
+            locationType: 'UriLocation',
+          },
+        },
+      },
+    },
   ],
   tracks: [
     {
@@ -52,6 +83,46 @@ const config = {
         index: {
           location: {
             uri: `${VOLVOX_DATA_URL}/volvox.sort.gff3.gz.tbi`,
+            locationType: 'UriLocation',
+          },
+        },
+      },
+    },
+    {
+      type: 'FeatureTrack',
+      trackId: 'Ssal_v3.1-Ensembl-FeatureTrack',
+      name: 'Genes(Ensembl)',
+      assemblyNames: ['Ssal_v3.1'],
+      category: ['Annotation'],
+      adapter: {
+        type: 'Gff3TabixAdapter',
+        gffGzLocation: {
+          uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/annotations/Ensembl/Salmo_salar.Ssal_v3.1.106_filtered.gff.gz',
+          locationType: 'UriLocation',
+        },
+        index: {
+          location: {
+            uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/annotations/Ensembl/Salmo_salar.Ssal_v3.1.106_filtered.gff.gz.tbi',
+            locationType: 'UriLocation',
+          },
+        },
+      },
+    },
+    {
+      type: 'FeatureTrack',
+      trackId: 'Ssal_v3.1-NCBI-FeatureTrack',
+      name: 'Genes(NCBI)',
+      assemblyNames: ['Ssal_v3.1'],
+      category: ['Annotation'],
+      adapter: {
+        type: 'Gff3TabixAdapter',
+        gffGzLocation: {
+          uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/annotations/NCBI/GCF_905237065.1_Ssal_v3.1_genomic_filtered.gff.gz',
+          locationType: 'UriLocation',
+        },
+        index: {
+          location: {
+            uri: 'https://salmobase.org/datafiles/genomes/AtlanticSalmon/Ssal_v3.1/annotations/NCBI/GCF_905237065.1_Ssal_v3.1_genomic_filtered.gff.gz.tbi',
             locationType: 'UriLocation',
           },
         },
