@@ -21,9 +21,6 @@ export default class FeatureCountPlugin extends Plugin {
 
   configure(pluginManager: PluginManager) {
     if (isAbstractMenuManager(pluginManager.rootModel)) {
-      // Add a top-level "Tools" menu if it doesn't exist
-      pluginManager.rootModel.appendMenu('Tools')
-
       // Add an item to count tracks in the current view
       pluginManager.rootModel.appendToMenu('Tools', {
         label: 'Count Tracks in View',
