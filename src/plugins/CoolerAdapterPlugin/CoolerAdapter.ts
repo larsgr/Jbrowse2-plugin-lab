@@ -21,6 +21,7 @@ type CoolerMeta = {
 type ResolutionIndexes = {
   chromOffsets: number[]
   bin1Offsets: number[]
+  totalNnz: number
 }
 
 type Pixel = { bin1: number; bin2: number; counts: number }
@@ -153,7 +154,8 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
       )) as H5Group
       const chromOffsets = toNumberArray(await (await indexesGroup.get('chrom_offset') as H5Dataset).value)
       const bin1Offsets = toNumberArray(await (await indexesGroup.get('bin1_offset') as H5Dataset).value)
-      return { chromOffsets, bin1Offsets }
+      const totalNnz = bin1Offsets.at(-1) || 0
+      return { chromOffsets, bin1Offsets, totalNnz }
     })()
 
     this.indexesByResolution.set(resolution, promise)
@@ -190,11 +192,12 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
   private async chooseResolutionForRanges(regions: Region[], bpPerPx: number, opts?: BaseOptions) {
     const meta = await this.getMeta(opts)
     const maxPixelsToFetch = Number(this.getConf('maxPixelsToFetch') || 2_000_000)
+    const maxResolutionTotalPixels = Number(this.getConf('maxResolutionTotalPixels') || 5_000_000)
     let resolution = await this.chooseResolution(bpPerPx, opts)
 
     while (true) {
       const idx = meta.resolutions.indexOf(resolution)
-      const { chromOffsets, bin1Offsets } = await this.getIndexesForResolution(resolution, opts)
+      const { chromOffsets, bin1Offsets, totalNnz } = await this.getIndexesForResolution(resolution, opts)
       const ranges = regions.map(region =>
         this.getBinRangeForRegion(region, meta.chromNames, meta.chromLengths, chromOffsets, resolution),
       )
@@ -207,7 +210,11 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
       const overallEndBin = Math.max(...valid.map(r => r.end))
       const nnzStart = bin1Offsets[overallStartBin]!
       const nnzEnd = bin1Offsets[overallEndBin]!
-      if (nnzEnd - nnzStart <= maxPixelsToFetch || idx === meta.resolutions.length - 1) {
+      const requestedPixelCount = nnzEnd - nnzStart
+      if (
+        (requestedPixelCount <= maxPixelsToFetch && totalNnz <= maxResolutionTotalPixels) ||
+        idx === meta.resolutions.length - 1
+      ) {
         return { resolution, ranges, bin1Offsets }
       }
 
@@ -234,6 +241,11 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
       out.push({ bin1: bin1Ids[i]!, bin2: bin2Ids[i]!, counts: counts[i]! })
     }
     return out
+  }
+
+
+  async getResolution(res: number, opts?: BaseOptions) {
+    return this.chooseResolution(res, opts)
   }
 
   async getRefNames(opts?: BaseOptions) {
