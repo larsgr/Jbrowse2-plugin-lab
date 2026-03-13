@@ -1,8 +1,12 @@
 import Plugin from '@jbrowse/core/Plugin'
 import type PluginManager from '@jbrowse/core/PluginManager'
 import { AdapterType } from '@jbrowse/core/pluggableElementTypes'
+import type { FileLocation } from '@jbrowse/core/util/types'
 import { getFileName } from '@jbrowse/core/util/tracks'
 import CoolerAdapterConfigSchema from './configSchema'
+
+type AdapterGuesser = (file: FileLocation, index: unknown, adapterHint: string) => unknown
+type TrackTypeGuesser = (adapterName: string) => string
 
 export default class CoolerAdapterPlugin extends Plugin {
   name = 'CoolerAdapterPlugin'
@@ -16,44 +20,28 @@ export default class CoolerAdapterPlugin extends Plugin {
           configSchema: CoolerAdapterConfigSchema,
           getAdapterClass: () => import('./CoolerAdapter').then(r => r.default),
           adapterMetadata: {
-            supportedFileExtensions: ['mcool', 'cool'],
             category: 'Hi-C',
             description: 'Cooler/mcool Hi-C contact matrix adapter',
           },
         }),
     )
 
-    pluginManager.addToExtensionPoint(
-      'Core-guessAdapterForLocation',
-      (adapterGuesser: Function) => {
-        return (
-          file: { uri: string; locationType: string },
-          index: unknown,
-          adapterHint: string,
-        ) => {
-          const fileName = getFileName(file)
-          if (
-            (/\.m?cool$/i.test(fileName) && !adapterHint) ||
-            adapterHint === 'CoolerAdapter'
-          ) {
-            return {
-              type: 'CoolerAdapter',
-              coolerLocation: file,
-            }
+    pluginManager.addToExtensionPoint('Core-guessAdapterForLocation', (adapterGuesser: AdapterGuesser) => {
+      return (file: FileLocation, index: unknown, adapterHint: string) => {
+        const fileName = getFileName(file)
+        if ((/\.m?cool$/i.test(fileName) && !adapterHint) || adapterHint === 'CoolerAdapter') {
+          return {
+            type: 'CoolerAdapter',
+            coolerLocation: file,
           }
-          return adapterGuesser(file, index, adapterHint)
         }
-      },
-    )
+        return adapterGuesser(file, index, adapterHint)
+      }
+    })
 
-    pluginManager.addToExtensionPoint(
-      'Core-guessTrackTypeForLocation',
-      (trackTypeGuesser: Function) => {
-        return (adapterName: string) =>
-          adapterName === 'CoolerAdapter'
-            ? 'HicTrack'
-            : trackTypeGuesser(adapterName)
-      },
-    )
+    pluginManager.addToExtensionPoint('Core-guessTrackTypeForLocation', (trackTypeGuesser: TrackTypeGuesser) => {
+      return (adapterName: string) =>
+        adapterName === 'CoolerAdapter' ? 'HicTrack' : trackTypeGuesser(adapterName)
+    })
   }
 }

@@ -128,6 +128,24 @@ const config = {
         },
       },
     },
+
+    {
+      type: 'HicTrack',
+      trackId: 'Ssal_v3.1-test-cooler',
+      name: 'HiC liver test (.mcool)',
+      assemblyNames: ['Ssal_v3.1'],
+      category: ['Hi-C'],
+      adapter: {
+        type: 'CoolerAdapter',
+        coolerLocation: {
+          uri: 'https://test.salmobase.org/datafiles/test/HiC_liver_Ss.mcool',
+          locationType: 'UriLocation',
+        },
+        maxPixelsToFetch: 500_000,
+        maxResolutionTotalPixels: 3_000_000,
+      },
+    },
+
     {
       type: 'QuantitativeTrack',
       trackId: 'volvox_wig',
@@ -151,22 +169,22 @@ const config = {
         type: 'LinearGenomeView',
         displayedRegions: [
           {
-            refName: 'ctgA',
-            start: 1000,
-            end: 25000,
-            assemblyName: 'volvox',
+            refName: 'ssa01',
+            start: 1_000_000,
+            end: 10_000_000,
+            assemblyName: 'Ssal_v3.1',
           },
         ],
         tracks: [
           {
-            id: 'genes-track',
-            type: 'FeatureTrack',
-            configuration: 'volvox_genes',
+            id: 'hic-track',
+            type: 'HicTrack',
+            configuration: 'Ssal_v3.1-test-cooler',
             displays: [
               {
-                id: 'genes-display',
-                type: 'LinearBasicDisplay',
-                configuration: 'volvox_genes-LinearBasicDisplay',
+                id: 'hic-display',
+                type: 'LinearHicDisplay',
+                configuration: 'Ssal_v3.1-test-cooler-LinearHicDisplay',
               },
             ],
           },

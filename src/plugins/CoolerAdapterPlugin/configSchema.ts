@@ -15,6 +15,20 @@ const CoolerAdapterConfigSchema = ConfigurationSchema(
       defaultValue: 1,
       description: 'Initial resolution multiplier',
     },
+
+    maxPixelsToFetch: {
+      type: 'number',
+      defaultValue: 2_000_000,
+      description:
+        'Maximum number of pixel records to decode from a single query; adapter will switch to coarser resolution if exceeded',
+    },
+
+    maxResolutionTotalPixels: {
+      type: 'number',
+      defaultValue: 5_000_000,
+      description:
+        'Maximum total pixel records allowed in a chosen resolution (safety guard because hdf5-indexed-reader decodes full pixel arrays)',
+    },
   },
   {
     explicitlyTyped: true,
