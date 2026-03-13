@@ -3,6 +3,7 @@ import { createViewState, JBrowseApp } from '@jbrowse/react-app2'
 import HelloWorldPlugin from './plugins/HelloWorldPlugin'
 import FeatureCountPlugin from './plugins/FeatureCountPlugin'
 import CustomViewPlugin from './plugins/CustomViewPlugin'
+import CoolerAdapterPlugin from './plugins/CoolerAdapterPlugin'
 import './App.css'
 
 const VOLVOX_DATA_URL =
@@ -109,7 +110,12 @@ function App() {
     () =>
       createViewState({
         config,
-        plugins: [HelloWorldPlugin, FeatureCountPlugin, CustomViewPlugin],
+        plugins: [
+          HelloWorldPlugin,
+          FeatureCountPlugin,
+          CustomViewPlugin,
+          CoolerAdapterPlugin,
+        ],
       }),
     [],
   )
