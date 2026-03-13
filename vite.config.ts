@@ -29,8 +29,5 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
-  optimizeDeps: {
-    exclude: ['@jbrowse/core'],
-  },
 })
 
