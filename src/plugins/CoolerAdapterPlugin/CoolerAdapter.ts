@@ -16,11 +16,16 @@ type CoolerMeta = {
   resolutions: number[]
   chromNames: string[]
   chromLengths: number[]
+}
+
+type ResolutionIndexes = {
   chromOffsets: number[]
   bin1Offsets: number[]
 }
 
 type Pixel = { bin1: number; bin2: number; counts: number }
+
+type BinRange = { start: number; end: number }
 
 function isGroup(node: H5Node): node is H5Group {
   return 'keys' in node
@@ -53,6 +58,7 @@ function parseCoolerUri(uri: string) {
 export default class CoolerAdapter extends BaseFeatureDataAdapter {
   private fileP?: Promise<H5Group>
   private metaP?: Promise<CoolerMeta>
+  private indexesByResolution = new Map<number, Promise<ResolutionIndexes>>()
 
   private async openFile() {
     if (!this.fileP) {
@@ -90,7 +96,6 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
       const uri = location?.uri || ''
       const { groupPath } = parseCoolerUri(uri)
 
-      // cooler schema: multires under /resolutions/<bin_size>, single-res at root/group
       const rootResNode = (await this.getGroup(
         groupPath ? `${groupPath}/resolutions` : '/resolutions',
       ).catch(() => undefined)) as H5Group | undefined
@@ -109,16 +114,11 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
       const chromsGroup = (await this.getGroup(
         collectionPath ? `${collectionPath}/chroms` : '/chroms',
       )) as H5Group
-      const indexesGroup = (await this.getGroup(
-        collectionPath ? `${collectionPath}/indexes` : '/indexes',
-      )) as H5Group
 
       const chromNames = toStringArray(await (await chromsGroup.get('name') as H5Dataset).value)
       const chromLengths = toNumberArray(await (await chromsGroup.get('length') as H5Dataset).value)
-      const chromOffsets = toNumberArray(await (await indexesGroup.get('chrom_offset') as H5Dataset).value)
-      const bin1Offsets = toNumberArray(await (await indexesGroup.get('bin1_offset') as H5Dataset).value)
 
-      return { groupPath, resolutions, chromNames, chromLengths, chromOffsets, bin1Offsets }
+      return { groupPath, resolutions, chromNames, chromLengths }
     })
   }
 
@@ -138,6 +138,81 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
   private async getCollectionPath(resolution: number, opts?: BaseOptions) {
     const { groupPath, resolutions } = await this.getMeta(opts)
     return resolutions.length > 1 ? `${groupPath}/resolutions/${resolution}` : groupPath
+  }
+
+  private async getIndexesForResolution(resolution: number, opts?: BaseOptions) {
+    const cached = this.indexesByResolution.get(resolution)
+    if (cached) {
+      return cached
+    }
+
+    const promise = (async () => {
+      const collectionPath = await this.getCollectionPath(resolution, opts)
+      const indexesGroup = (await this.getGroup(
+        collectionPath ? `${collectionPath}/indexes` : '/indexes',
+      )) as H5Group
+      const chromOffsets = toNumberArray(await (await indexesGroup.get('chrom_offset') as H5Dataset).value)
+      const bin1Offsets = toNumberArray(await (await indexesGroup.get('bin1_offset') as H5Dataset).value)
+      return { chromOffsets, bin1Offsets }
+    })()
+
+    this.indexesByResolution.set(resolution, promise)
+    return promise
+  }
+
+  private getBinRangeForRegion(
+    region: Region,
+    chromNames: string[],
+    chromLengths: number[],
+    chromOffsets: number[],
+    resolution: number,
+  ): BinRange {
+    const chrIdx = chromNames.indexOf(region.refName)
+    if (chrIdx === -1) {
+      return { start: -1, end: -1 }
+    }
+
+    const chrBinStart = chromOffsets[chrIdx]!
+    const chrBinEnd = chromOffsets[chrIdx + 1]!
+    const chrLength = chromLengths[chrIdx]!
+
+    const startBp = Math.max(0, Math.min(region.start, chrLength))
+    const endBp = Math.max(startBp, Math.min(region.end, chrLength))
+
+    const localStartBin = Math.floor(startBp / resolution)
+    const localEndBin = Math.ceil(endBp / resolution)
+
+    const start = Math.min(chrBinEnd, chrBinStart + localStartBin)
+    const end = Math.min(chrBinEnd, chrBinStart + localEndBin)
+    return { start, end }
+  }
+
+  private async chooseResolutionForRanges(regions: Region[], bpPerPx: number, opts?: BaseOptions) {
+    const meta = await this.getMeta(opts)
+    const maxPixelsToFetch = Number(this.getConf('maxPixelsToFetch') || 2_000_000)
+    let resolution = await this.chooseResolution(bpPerPx, opts)
+
+    while (true) {
+      const idx = meta.resolutions.indexOf(resolution)
+      const { chromOffsets, bin1Offsets } = await this.getIndexesForResolution(resolution, opts)
+      const ranges = regions.map(region =>
+        this.getBinRangeForRegion(region, meta.chromNames, meta.chromLengths, chromOffsets, resolution),
+      )
+      const valid = ranges.filter(r => r.start >= 0 && r.end > r.start)
+      if (!valid.length) {
+        return { resolution, ranges, bin1Offsets }
+      }
+
+      const overallStartBin = Math.min(...valid.map(r => r.start))
+      const overallEndBin = Math.max(...valid.map(r => r.end))
+      const nnzStart = bin1Offsets[overallStartBin]!
+      const nnzEnd = bin1Offsets[overallEndBin]!
+      if (nnzEnd - nnzStart <= maxPixelsToFetch || idx === meta.resolutions.length - 1) {
+        return { resolution, ranges, bin1Offsets }
+      }
+
+      resolution = meta.resolutions[idx + 1]!
+    }
   }
 
   private async readPixelsForRange(
@@ -179,41 +254,19 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
   getFeatures(region: Region, opts: BaseOptions = {}): Observable<Feature> {
     return ObservableCreate(async observer => {
       const { bpPerPx = 1 } = opts
-      const meta = await this.getMeta(opts)
-      const resolution = await this.chooseResolution(bpPerPx, opts)
+      const { resolution, ranges, bin1Offsets } = await this.chooseResolutionForRanges([region], bpPerPx, opts)
+      const [range] = ranges
+      if (!range || range.start < 0 || range.end <= range.start) {
+        observer.complete()
+        return
+      }
+
       const collectionPath = await this.getCollectionPath(resolution, opts)
-      const binsGroup = (await this.getGroup(
-        collectionPath ? `${collectionPath}/bins` : '/bins',
-      )) as H5Group
-      const binStarts = toNumberArray(await (await binsGroup.get('start') as H5Dataset).value)
-      const binEnds = toNumberArray(await (await binsGroup.get('end') as H5Dataset).value)
-
-      const chrIdx = meta.chromNames.indexOf(region.refName)
-      if (chrIdx === -1) {
-        observer.complete()
-        return
-      }
-
-      const chrBinStart = meta.chromOffsets[chrIdx]!
-      const chrBinEnd = meta.chromOffsets[chrIdx + 1]!
-      let firstVisibleBin = chrBinStart
-      while (firstVisibleBin < chrBinEnd && binEnds[firstVisibleBin]! <= region.start) {
-        firstVisibleBin += 1
-      }
-      let lastVisibleBin = firstVisibleBin
-      while (lastVisibleBin < chrBinEnd && binStarts[lastVisibleBin]! < region.end) {
-        lastVisibleBin += 1
-      }
-      if (firstVisibleBin >= lastVisibleBin) {
-        observer.complete()
-        return
-      }
-
-      const nnzStart = meta.bin1Offsets[firstVisibleBin]!
-      const nnzEnd = meta.bin1Offsets[lastVisibleBin]!
+      const nnzStart = bin1Offsets[range.start]!
+      const nnzEnd = bin1Offsets[range.end]!
       const pixels = await this.readPixelsForRange(collectionPath, nnzStart, nnzEnd)
       for (const pixel of pixels) {
-        if (pixel.bin2 >= firstVisibleBin && pixel.bin2 < lastVisibleBin) {
+        if (pixel.bin2 >= range.start && pixel.bin2 < range.end) {
           observer.next(pixel as unknown as Feature)
         }
       }
@@ -223,34 +276,10 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
 
   async getMultiRegionContactRecords(regions: Region[], opts: BaseOptions = {}) {
     const { bpPerPx = 1 } = opts
-    const meta = await this.getMeta(opts)
-    const resolution = await this.chooseResolution(bpPerPx, opts)
+    const { resolution, ranges, bin1Offsets } = await this.chooseResolutionForRanges(regions, bpPerPx, opts)
     const collectionPath = await this.getCollectionPath(resolution, opts)
-    const binsGroup = (await this.getGroup(
-      collectionPath ? `${collectionPath}/bins` : '/bins',
-    )) as H5Group
-    const binStarts = toNumberArray(await (await binsGroup.get('start') as H5Dataset).value)
-    const binEnds = toNumberArray(await (await binsGroup.get('end') as H5Dataset).value)
 
-    const ranges = regions.map(region => {
-      const chrIdx = meta.chromNames.indexOf(region.refName)
-      if (chrIdx === -1) {
-        return { start: -1, end: -1 }
-      }
-      const chrBinStart = meta.chromOffsets[chrIdx]!
-      const chrBinEnd = meta.chromOffsets[chrIdx + 1]!
-      let start = chrBinStart
-      while (start < chrBinEnd && binEnds[start]! <= region.start) {
-        start += 1
-      }
-      let end = start
-      while (end < chrBinEnd && binStarts[end]! < region.end) {
-        end += 1
-      }
-      return { start, end }
-    })
-
-    const valid = ranges.filter(r => r.start >= 0 && r.end >= 0)
+    const valid = ranges.filter(r => r.start >= 0 && r.end > r.start)
     if (!valid.length) {
       return []
     }
@@ -258,8 +287,8 @@ export default class CoolerAdapter extends BaseFeatureDataAdapter {
     const overallStartBin = Math.min(...valid.map(r => r.start))
     const overallEndBin = Math.max(...valid.map(r => r.end))
 
-    const nnzStart = meta.bin1Offsets[overallStartBin]!
-    const nnzEnd = meta.bin1Offsets[overallEndBin]!
+    const nnzStart = bin1Offsets[overallStartBin]!
+    const nnzEnd = bin1Offsets[overallEndBin]!
     const pixels = await this.readPixelsForRange(collectionPath, nnzStart, nnzEnd)
 
     const out: Array<{ bin1: number; bin2: number; counts: number; region1Idx: number; region2Idx: number }> = []
