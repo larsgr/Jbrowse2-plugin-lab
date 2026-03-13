@@ -2,243 +2,282 @@ import { BaseFeatureDataAdapter } from '@jbrowse/core/data_adapters/BaseAdapter'
 import type { BaseOptions } from '@jbrowse/core/data_adapters/BaseAdapter'
 import { updateStatus } from '@jbrowse/core/util'
 import { ObservableCreate } from '@jbrowse/core/util/rxjs'
-import type { Observable } from 'rxjs'
 import type { Feature } from '@jbrowse/core/util/simpleFeature'
 import type { AugmentedRegion as Region } from '@jbrowse/core/util/types'
-import { FS, File, ready } from 'h5wasm'
+import type { Observable } from 'rxjs'
+import { openH5File } from 'hdf5-indexed-reader/dist/hdf5-indexed-reader.esm.js'
 
-type Chromosome = { id: number; name: string; length: number }
-type Bin = { chromId: number; start: number; end: number }
+type H5Group = { keys: string[]; get: (name: string) => Promise<H5Node> }
+type H5Dataset = { value: Promise<unknown> }
+type H5Node = H5Group | H5Dataset
+
+type CoolerMeta = {
+  groupPath: string
+  resolutions: number[]
+  chromNames: string[]
+  chromLengths: number[]
+  chromOffsets: number[]
+  bin1Offsets: number[]
+}
+
 type Pixel = { bin1: number; bin2: number; counts: number }
 
-type CoolerData = {
-  chromosomes: Chromosome[]
-  resolutions: number[]
-  binsByResolution: Map<number, Bin[]>
-  pixelsByResolution: Map<number, Pixel[]>
+function isGroup(node: H5Node): node is H5Group {
+  return 'keys' in node
 }
 
-type H5DatasetLike = { value?: unknown }
-type H5GroupLike = { get: (name: string) => H5DatasetLike | H5GroupLike | null; keys?: () => string[] }
-
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : Array.from((value as ArrayLike<T>) || [])
+function toNumberArray(value: unknown): number[] {
+  if (!value || typeof value !== 'object' || !('length' in value)) {
+    return []
+  }
+  return Array.from({ length: Number((value as { length: number }).length) }, (_, i) =>
+    Number((value as { [k: number]: unknown })[i]),
+  )
 }
 
-function asGroup(entity: unknown): H5GroupLike | undefined {
-  return entity && typeof entity === 'object' && 'get' in entity
-    ? (entity as H5GroupLike)
-    : undefined
+function toStringArray(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || !('length' in value)) {
+    return []
+  }
+  return Array.from({ length: Number((value as { length: number }).length) }, (_, i) =>
+    String((value as { [k: number]: unknown })[i]),
+  )
 }
 
-function datasetValue(group: H5GroupLike, name: string) {
-  const value = group.get(name)
-  return value && typeof value === 'object' && 'value' in value
-    ? (value as H5DatasetLike).value
-    : undefined
+function parseCoolerUri(uri: string) {
+  const [fileUri, groupPathRaw] = uri.split('::')
+  const groupPath = groupPathRaw ? (groupPathRaw.startsWith('/') ? groupPathRaw : `/${groupPathRaw}`) : ''
+  return { fileUri, groupPath }
 }
 
 export default class CoolerAdapter extends BaseFeatureDataAdapter {
-  private dataP?: Promise<CoolerData>
+  private fileP?: Promise<H5Group>
+  private metaP?: Promise<CoolerMeta>
 
-  private async getData(opts?: BaseOptions) {
-    if (!this.dataP) {
-      this.dataP = this.loadData(opts)
-    }
-    return this.dataP
-  }
-
-  private async loadData(opts?: BaseOptions) {
-    const { statusCallback = () => {} } = opts || {}
-
-    return updateStatus('Downloading .mcool file', statusCallback, async () => {
+  private async openFile() {
+    if (!this.fileP) {
       const location = this.getConf('coolerLocation') as { uri?: string } | undefined
       const uri = location?.uri
       if (!uri) {
         throw new Error('No coolerLocation.uri configured for CoolerAdapter')
       }
+      const { fileUri } = parseCoolerUri(uri)
+      this.fileP = openH5File({
+        url: fileUri,
+        fetchSize: 1_000_000,
+        maxSize: 20_000_000,
+      }) as Promise<H5Group>
+    }
+    return this.fileP
+  }
 
-      const response = await fetch(uri)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${uri}: ${response.status} ${response.statusText}`)
-      }
+  private async getMeta(opts?: BaseOptions) {
+    if (!this.metaP) {
+      this.metaP = this.loadMeta(opts)
+    }
+    return this.metaP
+  }
 
-      await ready
-      const buffer = new Uint8Array(await response.arrayBuffer())
-      const filename = `/tmp_${Date.now()}_${Math.random().toString(16).slice(2)}.mcool`
-      FS!.writeFile(filename, buffer)
+  private async getGroup(path: string) {
+    const file = await this.openFile()
+    return file.get(path) as Promise<H5Node>
+  }
 
-      const file = new File(filename, 'r')
-      try {
-        const chromsGroup =
-          asGroup(file.get('/chroms')) ||
-          asGroup(file.get('chroms'))
-        if (!chromsGroup) {
-          throw new Error('Invalid .mcool file: missing /chroms group')
-        }
+  private async loadMeta(opts?: BaseOptions): Promise<CoolerMeta> {
+    const { statusCallback = () => {} } = opts || {}
+    return updateStatus('Loading .mcool metadata', statusCallback, async () => {
+      const location = this.getConf('coolerLocation') as { uri?: string } | undefined
+      const uri = location?.uri || ''
+      const { groupPath } = parseCoolerUri(uri)
 
-        const chrNames = asArray<string>(datasetValue(chromsGroup, 'name'))
-        const chrLengths = asArray<number>(datasetValue(chromsGroup, 'length'))
-        if (!chrNames.length || !chrLengths.length) {
-          throw new Error('Invalid .mcool file: missing chroms name/length datasets')
-        }
+      // cooler schema: multires under /resolutions/<bin_size>, single-res at root/group
+      const rootResNode = (await this.getGroup(
+        groupPath ? `${groupPath}/resolutions` : '/resolutions',
+      ).catch(() => undefined)) as H5Group | undefined
 
-        const chromosomes = chrNames.map((name, id) => ({
-          id,
-          name: String(name),
-          length: Number(chrLengths[id]),
-        }))
+      const resolutions =
+        rootResNode && isGroup(rootResNode)
+          ? rootResNode.keys
+              .filter(k => /^\d+$/.test(k))
+              .map(Number)
+              .sort((a, b) => a - b)
+          : [Number(this.getConf('baseResolution') || 1)]
 
-        const resolutionsGroup =
-          asGroup(file.get('/resolutions')) ||
-          asGroup(file.get('resolutions'))
-        const resolutionNames: string[] = resolutionsGroup?.keys
-          ? resolutionsGroup.keys().filter((k: string) => /^\d+$/.test(k))
-          : []
+      const baseResolution = resolutions[0]!
+      const collectionPath = rootResNode ? `${groupPath}/resolutions/${baseResolution}` : groupPath
 
-        const resolutions = (resolutionNames.length
-          ? resolutionNames.map(Number).sort((a: number, b: number) => a - b)
-          : [0]) as number[]
+      const chromsGroup = (await this.getGroup(
+        collectionPath ? `${collectionPath}/chroms` : '/chroms',
+      )) as H5Group
+      const indexesGroup = (await this.getGroup(
+        collectionPath ? `${collectionPath}/indexes` : '/indexes',
+      )) as H5Group
 
-        const binsByResolution = new Map<number, Bin[]>()
-        const pixelsByResolution = new Map<number, Pixel[]>()
+      const chromNames = toStringArray(await (await chromsGroup.get('name') as H5Dataset).value)
+      const chromLengths = toNumberArray(await (await chromsGroup.get('length') as H5Dataset).value)
+      const chromOffsets = toNumberArray(await (await indexesGroup.get('chrom_offset') as H5Dataset).value)
+      const bin1Offsets = toNumberArray(await (await indexesGroup.get('bin1_offset') as H5Dataset).value)
 
-        for (const resolution of resolutions) {
-          const basePath = resolution === 0 ? '' : `/resolutions/${resolution}`
-          const binsGroup =
-            asGroup(file.get(`${basePath}/bins`)) ||
-            asGroup(file.get('/bins'))
-          const pixelsGroup =
-            asGroup(file.get(`${basePath}/pixels`)) ||
-            asGroup(file.get('/pixels'))
-          if (!binsGroup || !pixelsGroup) {
-            continue
-          }
-
-          const chromIds = asArray<number>(datasetValue(binsGroup, 'chrom'))
-          const starts = asArray<number>(datasetValue(binsGroup, 'start'))
-          const endsRaw = asArray<number>(datasetValue(binsGroup, 'end'))
-
-          const bins = starts.map((start, i) => ({
-            chromId: Number(chromIds[i]),
-            start: Number(start),
-            end: Number(endsRaw[i] ?? start + (resolution || 1)),
-          }))
-
-          const bin1Ids = asArray<number>(datasetValue(pixelsGroup, 'bin1_id'))
-          const bin2Ids = asArray<number>(datasetValue(pixelsGroup, 'bin2_id'))
-          const counts = asArray<number>(
-            datasetValue(pixelsGroup, 'count') ?? datasetValue(pixelsGroup, 'counts'),
-          )
-
-          const pixels = counts.map((count, i) => ({
-            bin1: Number(bin1Ids[i]),
-            bin2: Number(bin2Ids[i]),
-            counts: Number(count),
-          }))
-
-          binsByResolution.set(resolution, bins)
-          pixelsByResolution.set(resolution, pixels)
-        }
-
-        return { chromosomes, resolutions, binsByResolution, pixelsByResolution }
-      } finally {
-        file.close()
-        FS!.unlink(filename)
-      }
+      return { groupPath, resolutions, chromNames, chromLengths, chromOffsets, bin1Offsets }
     })
   }
 
-  async getRefNames(opts?: BaseOptions) {
-    const { chromosomes } = await this.getData(opts)
-    return chromosomes.map(c => c.name)
-  }
-
-  async getHeader(opts?: BaseOptions) {
-    const { chromosomes, resolutions } = await this.getData(opts)
-    return { chromosomes, resolutions, norms: ['NONE'], hasInterChromosomalData: true }
-  }
-
-  private async chooseResolution(requestedBpPerPx: number, opts?: BaseOptions) {
-    const { resolutions } = await this.getData(opts)
+  private async chooseResolution(bpPerPx: number, opts?: BaseOptions) {
+    const { resolutions } = await this.getMeta(opts)
     const resolutionMultiplier = Number(this.getConf('resolutionMultiplier') || 1)
-    let chosen = resolutions.at(-1) || 0
+    let chosen = resolutions.at(-1) || 1
     for (let i = resolutions.length - 1; i >= 0; i -= 1) {
       const r = resolutions[i]!
-      if (r <= 2 * requestedBpPerPx * resolutionMultiplier) {
+      if (r <= 2 * bpPerPx * resolutionMultiplier) {
         chosen = r
       }
     }
     return chosen
   }
 
+  private async getCollectionPath(resolution: number, opts?: BaseOptions) {
+    const { groupPath, resolutions } = await this.getMeta(opts)
+    return resolutions.length > 1 ? `${groupPath}/resolutions/${resolution}` : groupPath
+  }
+
+  private async readPixelsForRange(
+    collectionPath: string,
+    startNnz: number,
+    endNnzExclusive: number,
+  ): Promise<Pixel[]> {
+    const pixelsGroup = (await this.getGroup(
+      collectionPath ? `${collectionPath}/pixels` : '/pixels',
+    )) as H5Group
+
+    const bin1Ids = toNumberArray(await (await pixelsGroup.get('bin1_id') as H5Dataset).value)
+    const bin2Ids = toNumberArray(await (await pixelsGroup.get('bin2_id') as H5Dataset).value)
+    const countDs = (await pixelsGroup.get('count').catch(async () => pixelsGroup.get('counts'))) as H5Dataset
+    const counts = toNumberArray(await countDs.value)
+
+    const out: Pixel[] = []
+    for (let i = startNnz; i < endNnzExclusive; i += 1) {
+      out.push({ bin1: bin1Ids[i]!, bin2: bin2Ids[i]!, counts: counts[i]! })
+    }
+    return out
+  }
+
+  async getRefNames(opts?: BaseOptions) {
+    const { chromNames } = await this.getMeta(opts)
+    return chromNames
+  }
+
+  async getHeader(opts?: BaseOptions) {
+    const { chromNames, chromLengths, resolutions } = await this.getMeta(opts)
+    return {
+      chromosomes: chromNames.map((name, i) => ({ name, id: i, length: chromLengths[i] })),
+      resolutions,
+      norms: ['NONE'],
+      hasInterChromosomalData: true,
+    }
+  }
+
   getFeatures(region: Region, opts: BaseOptions = {}): Observable<Feature> {
     return ObservableCreate(async observer => {
-      const { bpPerPx = 1, statusCallback = () => {} } = opts
-      const chosenResolution = await this.chooseResolution(bpPerPx / 1000, opts)
-      const { chromosomes, binsByResolution, pixelsByResolution } = await this.getData(opts)
-      const chr = chromosomes.find(c => c.name === region.refName)
-      if (!chr) {
+      const { bpPerPx = 1 } = opts
+      const meta = await this.getMeta(opts)
+      const resolution = await this.chooseResolution(bpPerPx, opts)
+      const collectionPath = await this.getCollectionPath(resolution, opts)
+      const binsGroup = (await this.getGroup(
+        collectionPath ? `${collectionPath}/bins` : '/bins',
+      )) as H5Group
+      const binStarts = toNumberArray(await (await binsGroup.get('start') as H5Dataset).value)
+      const binEnds = toNumberArray(await (await binsGroup.get('end') as H5Dataset).value)
+
+      const chrIdx = meta.chromNames.indexOf(region.refName)
+      if (chrIdx === -1) {
         observer.complete()
         return
       }
 
-      const bins = binsByResolution.get(chosenResolution) || []
-      const pixels = pixelsByResolution.get(chosenResolution) || []
-      const visibleBins = new Set<number>()
-      bins.forEach((bin, idx) => {
-        if (bin.chromId === chr.id && bin.end > region.start && bin.start < region.end) {
-          visibleBins.add(idx)
-        }
-      })
+      const chrBinStart = meta.chromOffsets[chrIdx]!
+      const chrBinEnd = meta.chromOffsets[chrIdx + 1]!
+      let firstVisibleBin = chrBinStart
+      while (firstVisibleBin < chrBinEnd && binEnds[firstVisibleBin]! <= region.start) {
+        firstVisibleBin += 1
+      }
+      let lastVisibleBin = firstVisibleBin
+      while (lastVisibleBin < chrBinEnd && binStarts[lastVisibleBin]! < region.end) {
+        lastVisibleBin += 1
+      }
+      if (firstVisibleBin >= lastVisibleBin) {
+        observer.complete()
+        return
+      }
 
-      await updateStatus('Reading .mcool data', statusCallback, async () => {
-        for (const pixel of pixels) {
-          if (visibleBins.has(pixel.bin1) && visibleBins.has(pixel.bin2)) {
-            observer.next(pixel as unknown as Feature)
-          }
+      const nnzStart = meta.bin1Offsets[firstVisibleBin]!
+      const nnzEnd = meta.bin1Offsets[lastVisibleBin]!
+      const pixels = await this.readPixelsForRange(collectionPath, nnzStart, nnzEnd)
+      for (const pixel of pixels) {
+        if (pixel.bin2 >= firstVisibleBin && pixel.bin2 < lastVisibleBin) {
+          observer.next(pixel as unknown as Feature)
         }
-      })
+      }
       observer.complete()
     }, opts.stopToken) as unknown as Observable<Feature>
   }
 
   async getMultiRegionContactRecords(regions: Region[], opts: BaseOptions = {}) {
     const { bpPerPx = 1 } = opts
-    const chosenResolution = await this.chooseResolution(bpPerPx / 1000, opts)
-    const { chromosomes, binsByResolution, pixelsByResolution } = await this.getData(opts)
-    const bins = binsByResolution.get(chosenResolution) || []
-    const pixels = pixelsByResolution.get(chosenResolution) || []
+    const meta = await this.getMeta(opts)
+    const resolution = await this.chooseResolution(bpPerPx, opts)
+    const collectionPath = await this.getCollectionPath(resolution, opts)
+    const binsGroup = (await this.getGroup(
+      collectionPath ? `${collectionPath}/bins` : '/bins',
+    )) as H5Group
+    const binStarts = toNumberArray(await (await binsGroup.get('start') as H5Dataset).value)
+    const binEnds = toNumberArray(await (await binsGroup.get('end') as H5Dataset).value)
 
-    const binsPerRegion = regions.map(region => {
-      const chr = chromosomes.find(c => c.name === region.refName)
-      const set = new Set<number>()
-      if (!chr) {
-        return set
+    const ranges = regions.map(region => {
+      const chrIdx = meta.chromNames.indexOf(region.refName)
+      if (chrIdx === -1) {
+        return { start: -1, end: -1 }
       }
-      bins.forEach((bin, idx) => {
-        if (bin.chromId === chr.id && bin.end > region.start && bin.start < region.end) {
-          set.add(idx)
-        }
-      })
-      return set
+      const chrBinStart = meta.chromOffsets[chrIdx]!
+      const chrBinEnd = meta.chromOffsets[chrIdx + 1]!
+      let start = chrBinStart
+      while (start < chrBinEnd && binEnds[start]! <= region.start) {
+        start += 1
+      }
+      let end = start
+      while (end < chrBinEnd && binStarts[end]! < region.end) {
+        end += 1
+      }
+      return { start, end }
     })
 
-    const records: Array<{ bin1: number; bin2: number; counts: number; region1Idx: number; region2Idx: number }> = []
+    const valid = ranges.filter(r => r.start >= 0 && r.end >= 0)
+    if (!valid.length) {
+      return []
+    }
+
+    const overallStartBin = Math.min(...valid.map(r => r.start))
+    const overallEndBin = Math.max(...valid.map(r => r.end))
+
+    const nnzStart = meta.bin1Offsets[overallStartBin]!
+    const nnzEnd = meta.bin1Offsets[overallEndBin]!
+    const pixels = await this.readPixelsForRange(collectionPath, nnzStart, nnzEnd)
+
+    const out: Array<{ bin1: number; bin2: number; counts: number; region1Idx: number; region2Idx: number }> = []
     for (const pixel of pixels) {
-      for (let i = 0; i < binsPerRegion.length; i += 1) {
-        if (!binsPerRegion[i]!.has(pixel.bin1)) {
+      for (let i = 0; i < ranges.length; i += 1) {
+        const r1 = ranges[i]!
+        if (pixel.bin1 < r1.start || pixel.bin1 >= r1.end) {
           continue
         }
-        for (let j = i; j < binsPerRegion.length; j += 1) {
-          if (binsPerRegion[j]!.has(pixel.bin2)) {
-            records.push({ ...pixel, region1Idx: i, region2Idx: j })
+        for (let j = i; j < ranges.length; j += 1) {
+          const r2 = ranges[j]!
+          if (pixel.bin2 >= r2.start && pixel.bin2 < r2.end) {
+            out.push({ ...pixel, region1Idx: i, region2Idx: j })
           }
         }
       }
     }
-
-    return records
+    return out
   }
 
   async getMultiRegionFeatureDensityStats() {
