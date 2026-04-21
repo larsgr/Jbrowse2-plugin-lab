@@ -3,7 +3,6 @@ import { createViewState, JBrowseApp } from '@jbrowse/react-app2'
 import HelloWorldPlugin from './plugins/HelloWorldPlugin'
 import FeatureCountPlugin from './plugins/FeatureCountPlugin'
 import CustomViewPlugin from './plugins/CustomViewPlugin'
-import CoolerAdapterPlugin from './plugins/CoolerAdapterPlugin'
 import './App.css'
 
 const VOLVOX_DATA_URL =
@@ -130,23 +129,6 @@ const config = {
     },
 
     {
-      type: 'HicTrack',
-      trackId: 'Ssal_v3.1-test-cooler',
-      name: 'HiC liver test (.mcool)',
-      assemblyNames: ['Ssal_v3.1'],
-      category: ['Hi-C'],
-      adapter: {
-        type: 'CoolerAdapter',
-        coolerLocation: {
-          uri: 'https://test.salmobase.org/datafiles/test/HiC_liver_Ss.mcool',
-          locationType: 'UriLocation',
-        },
-        maxPixelsToFetch: 500_000,
-        maxResolutionTotalPixels: 3_000_000,
-      },
-    },
-
-    {
       type: 'QuantitativeTrack',
       trackId: 'volvox_wig',
       name: 'Volvox Coverage',
@@ -175,20 +157,7 @@ const config = {
             assemblyName: 'Ssal_v3.1',
           },
         ],
-        tracks: [
-          {
-            id: 'hic-track',
-            type: 'HicTrack',
-            configuration: 'Ssal_v3.1-test-cooler',
-            displays: [
-              {
-                id: 'hic-display',
-                type: 'LinearHicDisplay',
-                configuration: 'Ssal_v3.1-test-cooler-LinearHicDisplay',
-              },
-            ],
-          },
-        ],
+        tracks: [],
       },
     ],
   },
@@ -203,7 +172,6 @@ function App() {
           HelloWorldPlugin,
           FeatureCountPlugin,
           CustomViewPlugin,
-          CoolerAdapterPlugin,
         ],
       }),
     [],
