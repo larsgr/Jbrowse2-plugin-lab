@@ -3,6 +3,7 @@ import { createViewState, JBrowseApp } from '@jbrowse/react-app2'
 import HelloWorldPlugin from './plugins/HelloWorldPlugin'
 import FeatureCountPlugin from './plugins/FeatureCountPlugin'
 import CustomViewPlugin from './plugins/CustomViewPlugin'
+import StrandedBigWigPlugin from './plugins/StrandedBigWigPlugin'
 import './App.css'
 
 const VOLVOX_DATA_URL =
@@ -142,6 +143,50 @@ const config = {
         },
       },
     },
+    {
+      // Demo for StrandedBigWigPlugin. volvox has no true stranded pair in the
+      // test data, so two different BigWigs stand in for +/- strand. They must
+      // be genuinely different files: volvox.bw and volvox_microarray.bw are
+      // byte-identical, so pairing those would render a perfect mirror and
+      // hide a bug that read the forward file for both strands.
+      //
+      // These two stand-ins have very different magnitudes (coverage peaks
+      // near 40, the microarray near 800), so the demo looks lopsided: the
+      // blue forward strand is a thin band above the axis and the red reverse
+      // strand fills the space below it. That is the shared autoscale doing
+      // its job on mismatched data, not a plugin bug. Real stranded pairs from
+      // one sample have comparable ranges and render symmetrically.
+      type: 'QuantitativeTrack',
+      trackId: 'volvox_stranded',
+      name: 'Volvox Stranded Coverage (+/-)',
+      assemblyNames: ['volvox'],
+      category: ['Quantitative'],
+      adapter: {
+        type: 'StrandedBigWigAdapter',
+        forwardBigWigLocation: {
+          uri: `${VOLVOX_DATA_URL}/volvox-sorted.bam.coverage.bw`,
+          locationType: 'UriLocation',
+        },
+        reverseBigWigLocation: {
+          uri: `${VOLVOX_DATA_URL}/volvox.bw`,
+          locationType: 'UriLocation',
+        },
+      },
+      displays: [
+        {
+          type: 'LinearWiggleDisplay',
+          displayId: 'volvox_stranded-LinearWiggleDisplay',
+          defaultRendering: 'xyplot',
+          renderers: {
+            XYPlotRenderer: {
+              type: 'XYPlotRenderer',
+              posColor: '#1a7abf',
+              negColor: '#d1495b',
+            },
+          },
+        },
+      ],
+    },
   ],
   defaultSession: {
     name: 'Plugin Lab Demo',
@@ -172,6 +217,7 @@ function App() {
           HelloWorldPlugin,
           FeatureCountPlugin,
           CustomViewPlugin,
+          StrandedBigWigPlugin,
         ],
       }),
     [],
@@ -216,6 +262,18 @@ function App() {
               <code className="plugin-type">ViewType</code>
               <p>
                 Open with <strong>Add → Open Sequence Stats View</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="plugin-card">
+            <div className="plugin-card-icon">🧬</div>
+            <div>
+              <h3>StrandedBigWigPlugin</h3>
+              <code className="plugin-type">AdapterType</code>
+              <p>
+                On the <strong>volvox</strong> assembly, enable the{' '}
+                <strong>Volvox Stranded Coverage (+/-)</strong> track. Reverse
+                strand draws below the axis in a second color.
               </p>
             </div>
           </div>
