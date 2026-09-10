@@ -75,6 +75,42 @@ The three examples map to the three extension points:
 | `HelloWorldPlugin` | `WidgetType` (right drawer panel) | Add → Open Hello World Widget |
 | `CustomViewPlugin` | `ViewType` (main visualization panel) | Add → Open Sequence Stats View |
 | `FeatureCountPlugin` | `configure()` only, no new types | Tools → Count Tracks in View |
+| `StrandedBigWigPlugin` | `AdapterType` (no UI at all) | track config, then the track selector |
+
+### Writing an AdapterType (`StrandedBigWigPlugin`)
+
+An adapter plugs in below the renderers, so it registers no menu item — a track
+reaches it through `adapter: { type: '...' }` in config. Two things about this
+one generalise:
+
+- **Wrap existing adapters instead of re-parsing formats.** `getSubAdapter`
+  (available on the adapter instance) builds a configured child adapter, so
+  reading a BigWig pair means delegating to two `BigWigAdapter`s and merging
+  their observables. Cache the *promise*, not the result — `getFeatures` can be
+  re-entered before the first build resolves.
+- **Let the base class derive stats.** `BaseFeatureDataAdapter` computes
+  quantitative stats by scanning `getFeatures`, so transformed scores autoscale
+  correctly with no extra code. But it computes *feature density* the same way,
+  and for a BigWig that trips the display's "Zoom in to see features" guard —
+  quantitative adapters must override `getMultiRegionFeatureDensityStats()` to
+  return `{ featureDensity: 0 }`, as `BigWigAdapter` and `MultiWiggleAdapter` do.
+
+The strand flip and its two colors are not custom code: negating the reverse
+strand's scores puts them below the axis, and the built-in wiggle renderer
+already splits its palette at zero (`posColor`/`negColor`, chosen only while
+`color` is left at its `#f0f` sentinel). Prefer moving data into the shape
+JBrowse already renders over writing a renderer.
+
+### Importing from JBrowse packages
+
+Only `@jbrowse/core` and `@jbrowse/react-app2` are resolvable from the project
+root. The individual plugin packages that `react-app2` bundles — including
+`@jbrowse/plugin-wiggle` — are nested under
+`node_modules/@jbrowse/react-app2/node_modules/` and **cannot be imported**.
+Reference their pluggable elements by name in config (`'QuantitativeTrack'`,
+`'LinearWiggleDisplay'`, `'BigWigAdapter'`) rather than importing them. Their
+source is still worth reading as reference; `MultiWiggleAdapter` is the closest
+model for a multi-file adapter.
 
 ### The MST double-cast (important, appears in every state model)
 

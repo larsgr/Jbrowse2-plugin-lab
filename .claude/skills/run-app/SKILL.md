@@ -70,13 +70,47 @@ lsof -ti:5173 -sTCP:LISTEN | xargs -r kill
 Avoid `pkill -f vite` — a broad pattern can match the agent's own command line.
 
 **Remote genome data does not load in a sandboxed container.** The config in
-`App.tsx` fetches from `salmobase.org` and `raw.githubusercontent.com`. When the
-proxy blocks those you get a red `Failed to fetch` banner, the Linear Genome
-View falls back to its assembly-picker import form, and the console shows
-`ERR_TUNNEL_CONNECTION_FAILED`. **This is expected offline and is not a
-regression** — the driver reports those separately from real page errors. All
-three plugins work regardless, because none of them depend on track data. If you
-need to verify actual track rendering, you need network access to those hosts.
+`App.tsx` fetches from `salmobase.org` and `raw.githubusercontent.com`. You get
+a red `Failed to fetch` banner, the Linear Genome View falls back to its
+assembly-picker import form, and the console shows `ERR_TUNNEL_CONNECTION_FAILED`
+or `ERR_CONNECTION_RESET`. **This is expected and is not a regression** — the
+driver reports those separately from real page errors. The menu/widget/view
+plugins work regardless, because none of them depend on track data.
+
+Note that `curl` succeeding tells you nothing about the browser here: the egress
+proxy serves curl (including Range requests) while closing Chromium's tunnels
+mid-exchange, so `raw.githubusercontent.com` returns 200 to curl and
+`Failed to fetch` in the page. Check with an in-page `fetch()`, not curl.
+
+**To verify anything that needs track data** (a new adapter, a renderer), serve
+the data locally instead of chasing the proxy — curl can fetch it even though
+the browser cannot:
+
+```bash
+mkdir -p public/test_data
+V=https://raw.githubusercontent.com/GMOD/jbrowse-components/main/test_data/volvox
+for f in volvox.2bit volvox.bw volvox-sorted.bam.coverage.bw; do
+  curl -sS -o "public/test_data/$f" "$V/$f"
+done
+# then temporarily point VOLVOX_DATA_URL at '/Jbrowse2-plugin-lab/test_data'
+```
+
+Vite serves `public/` under the base path, so the browser fetches from
+localhost and the volvox assembly loads. Revert both changes afterwards —
+`public/test_data/` is deliberately not committed. Beware that `volvox.bw` and
+`volvox_microarray.bw` are byte-identical, so pairing them hides bugs.
+
+To drive a track: open a **fresh** Linear genome view from the Add menu (the
+default session's view is wedged on the unreachable `Ssal_v3.1` assembly), wait
+for **Show all regions in assembly** to become enabled, then check the track's
+box — the row is
+`label:has([data-testid="htsTrackLabel-Tracks,<trackId>"]) input[type="checkbox"]`,
+and clicking the visible text label does *not* toggle it.
+
+For a quantitative track, assert on canvas pixels rather than on text: read
+`getImageData` and compare the y-ranges of each color. "Blue lies entirely above
+red" is axis-relative and survives autoscale changes, whereas splitting the
+canvas at its midline silently passes when the zero line is off-center.
 
 ## Writing your own interactions
 
