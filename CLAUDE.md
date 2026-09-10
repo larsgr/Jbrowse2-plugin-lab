@@ -25,6 +25,17 @@ npm run preview                  # Serve dist/ locally
 There is no separate `typecheck` script — run `npx tsc -b` (or `npm run build`) to
 type-check. There are no tests, so there is no "run a single test" workflow.
 
+To verify a plugin actually works, run it in a browser:
+
+```bash
+.claude/skills/run-app/scripts/smoke.sh   # dev server + headless Chromium, screenshots all three plugins
+```
+
+See `.claude/skills/run-app/SKILL.md` (the `run-app` skill) for the environment
+gotchas — Playwright browser-version mismatch, selector traps that cause false
+passes, and why blocked remote genome data is expected rather than a regression.
+A passing `npm run build` says nothing about whether a plugin still loads.
+
 ## Architecture
 
 ### The app shell choice matters
