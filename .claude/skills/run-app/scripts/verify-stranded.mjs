@@ -68,20 +68,24 @@ await page.waitForTimeout(2000)
 // A newly enabled track stays in "Loading" until the view changes - it never
 // requests data on its own. Reproduces with a stock BigWigAdapter track too,
 // so it is the app shell, not the adapter. Nudge the view to kick rendering.
-const loc = page.locator('input[value*="ssa01"], input[value*="56,1"]').first()
-await loc.click()
-await loc.fill('ssa01:56,174,000..56,190,000')
-await loc.press('Enter')
-await page.waitForTimeout(8000)
-await page.screenshot({ path: `${SHOTS}/03-track-on.png` })
+async function goTo(region) {
+  // Re-resolve by handle: fill() changes the value, so a value-based locator
+  // stops matching between calls.
+  const loc = await page
+    .locator('input[value*="ssa01"], input[value*=":"]')
+    .first()
+    .elementHandle()
+  await loc.click()
+  await loc.fill(region)
+  await loc.press('Enter')
+  await page.waitForTimeout(12000)
+}
 
-// Poll the canvases for both strand colors.
-const deadline = Date.now() + 150000
-let result = null
-while (Date.now() < deadline) {
-  result = await page.evaluate(() => {
+function scanCanvases() {
+  return page.evaluate(() => {
     const POS = [26, 122, 191], NEG = [209, 73, 91]
-    const near = (r, g, b, t) => Math.abs(r - t[0]) < 60 && Math.abs(g - t[1]) < 60 && Math.abs(b - t[2]) < 60
+    const near = (r, g, b, t) =>
+      Math.abs(r - t[0]) < 60 && Math.abs(g - t[1]) < 60 && Math.abs(b - t[2]) < 60
     for (const c of document.querySelectorAll('canvas')) {
       if (c.width < 200 || c.height < 40) continue
       let d
@@ -94,32 +98,53 @@ while (Date.now() < deadline) {
         if (near(r, g, b, POS)) { posN++; if (y < posMin) posMin = y; if (y > posMax) posMax = y }
         else if (near(r, g, b, NEG)) { negN++; if (y < negMin) negMin = y; if (y > negMax) negMax = y }
       }
-      if (posN > 50 && negN > 50) return { w: c.width, h: c.height, posN, negN, posMin, posMax, negMin, negMax }
+      if (posN > 20 && negN > 20) return { w: c.width, h: c.height, posN, negN, posMin, posMax, negMin, negMax }
     }
     return null
   })
-  if (result) break
-  await page.waitForTimeout(4000)
 }
-await page.screenshot({ path: `${SHOTS}/04-final.png` })
-const diag = await page.evaluate(() => {
-  const rows = [...document.querySelectorAll('[data-testid^="trackRenderingContainer"], [class*="trackRenderingContainer"]')]
-  const canvases = [...document.querySelectorAll('canvas')].map(c => `${c.width}x${c.height}`)
-  const texts = rows.map(r => r.innerText.replace(/\s+/g, ' ').slice(0, 200))
-  const body = document.body.innerText
-  const msg = ['Zoom in to see', 'force load', 'Failed', 'Error', 'No stats'].filter(m => body.includes(m))
-  return { canvases, texts, msg }
-})
-console.log('canvases:', JSON.stringify(diag.canvases))
-console.log('track text:', JSON.stringify(diag.texts))
-console.log('messages:', JSON.stringify(diag.msg))
-console.log('salmobase requests proxied:', n)
+
+// Both zoom levels matter, and they exercise different code paths.
+//
+// Zoomed in, BigWigAdapter returns raw values and the renderer only has
+// `score` to go on. Zoomed out it returns summary bins carrying
+// minScore/maxScore, which drawXY reads directly in its default "whiskers"
+// mode. An adapter that negates `score` alone passes the first case and draws
+// the reverse strand above the axis in the second, so checking one zoom proves
+// nothing about the other.
+const CASES = [
+  { name: 'zoomed in (raw values)', region: 'ssa01:56,174,000..56,190,000', shot: '03-zoomed-in' },
+  { name: 'zoomed out (summary bins)', region: '1:158,800,000..159,800,000', shot: '04-zoomed-out' },
+]
+
+let failures = 0
+for (const c of CASES) {
+  await goTo(c.region)
+  const deadline = Date.now() + 120000
+  let result = null
+  while (Date.now() < deadline) {
+    result = await scanCanvases()
+    if (result) break
+    await page.waitForTimeout(4000)
+  }
+  await page.screenshot({ path: `${SHOTS}/${c.shot}.png` })
+  console.log(`\n${c.name}  ${c.region}`)
+  if (!result) {
+    console.log('  FAIL: no canvas carrying both strand colors')
+    failures++
+    continue
+  }
+  console.log(`  forward (blue): ${result.posN} px, y ${result.posMin}..${result.posMax}`)
+  console.log(`  reverse (red) : ${result.negN} px, y ${result.negMin}..${result.negMax}`)
+  if (result.posMax <= result.negMin) {
+    console.log(`  PASS: all blue above all red`)
+  } else {
+    console.log(`  FAIL: strands overlap vertically - reverse strand is not below the axis`)
+    failures++
+  }
+}
+
+console.log('\nsalmobase requests proxied:', n)
 console.log('page errors:', errors.length ? errors.slice(0, 3) : 'none')
-if (!result) { console.log('FAIL: no canvas with both strand colors'); await browser.close(); process.exit(1) }
-console.log(`canvas ${result.w}x${result.h}`)
-console.log(`  forward (blue): ${result.posN} px, y ${result.posMin}..${result.posMax}`)
-console.log(`  reverse (red) : ${result.negN} px, y ${result.negMin}..${result.negMax}`)
-const ok = result.posMax <= result.negMin
-console.log(ok ? `  PASS: all blue above all red (blue ends ${result.posMax}, red starts ${result.negMin})`
-               : `  FAIL: strands overlap vertically`)
-await browser.close(); process.exit(ok ? 0 : 1)
+await browser.close()
+process.exit(failures ? 1 : 0)
