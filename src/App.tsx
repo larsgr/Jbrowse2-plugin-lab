@@ -9,6 +9,67 @@ import './App.css'
 const VOLVOX_DATA_URL =
   'https://raw.githubusercontent.com/GMOD/jbrowse-components/main/test_data/volvox'
 
+const SALMON_BODYMAP_URL =
+  'https://salmobase.org/datafiles/datasets/Aqua-Faang/trackhub/AtlanticSalmon/BodyMap/RNA/bigWig'
+
+/**
+ * Real stranded input for StrandedBigWigPlugin: Aqua-Faang BodyMap RNA-seq,
+ * mature female, replicate 1.
+ *
+ * Every sample in that directory ships as a `.forward.bigWig`/`.reverse.bigWig`
+ * pair over Ssal_v3.1, which is exactly the shape the adapter exists for. Two
+ * things make this a better demo than the volvox stand-in pair below:
+ *
+ *   - Both files come from one library rather than being two unrelated tracks
+ *     pressed into service, so the strands are on the same scale. Expression
+ *     still differs per gene, so the plot is not mirror-symmetric - but the
+ *     asymmetry is biology rather than an artefact of the stand-in.
+ *   - The strand assignment is checkable against the gene track: over
+ *     ENSSSAG00000028365 (+) the forward file peaks ~70000 against ~1800 on the
+ *     reverse, and the neighbouring ENSSSAG00000027035 (-) inverts that ratio.
+ *
+ * The BigWigs name chromosomes the Ensembl way (`1`..`29`), matching this
+ * assembly's .fai, so no refName translation is needed.
+ */
+const BODYMAP_TISSUES = ['Liver', 'Brain', 'Gill']
+
+const bodyMapStrandedTracks = BODYMAP_TISSUES.map(tissue => {
+  const sample = `AtlanticSalmon_RNA_${tissue}_Mature_Female_R1`
+  const trackId = `Ssal_v3.1-bodymap-${tissue}-stranded`
+  return {
+    type: 'QuantitativeTrack',
+    trackId,
+    name: `${tissue} RNA-seq (+/-)`,
+    assemblyNames: ['Ssal_v3.1'],
+    category: ['BodyMap RNA-seq'],
+    adapter: {
+      type: 'StrandedBigWigAdapter',
+      forwardBigWigLocation: {
+        uri: `${SALMON_BODYMAP_URL}/${sample}.forward.bigWig`,
+        locationType: 'UriLocation',
+      },
+      reverseBigWigLocation: {
+        uri: `${SALMON_BODYMAP_URL}/${sample}.reverse.bigWig`,
+        locationType: 'UriLocation',
+      },
+    },
+    displays: [
+      {
+        type: 'LinearWiggleDisplay',
+        displayId: `${trackId}-LinearWiggleDisplay`,
+        defaultRendering: 'xyplot',
+        renderers: {
+          XYPlotRenderer: {
+            type: 'XYPlotRenderer',
+            posColor: '#1a7abf',
+            negColor: '#d1495b',
+          },
+        },
+      },
+    ],
+  }
+})
+
 const config = {
   assemblies: [
     {
@@ -187,6 +248,7 @@ const config = {
         },
       ],
     },
+    ...bodyMapStrandedTracks,
   ],
   defaultSession: {
     name: 'Plugin Lab Demo',
@@ -194,14 +256,35 @@ const config = {
       {
         id: 'linearView',
         type: 'LinearGenomeView',
+        // ENSSSAG00000027035 (-, 56.176M) and ENSSSAG00000028365 (+, 56.185M)
+        // sit side by side here, both heavily covered in liver, so the stranded
+        // track is self-checking: each gene's coverage should land on the side
+        // of the axis matching its arrow in the gene track.
+        //
+        // The region starts *inside* the reverse-strand gene on purpose. The
+        // view opens at 1bp/px on the left edge of its region no matter how
+        // wide the region is, so starting at the intergenic gap would open on
+        // an empty track. Here it opens on ~12000x reverse coverage against
+        // ~90 forward, i.e. the plugin's whole point - a strand drawn below the
+        // axis - is on screen before the user touches anything. Zoom out to
+        // reach the forward gene.
+        //
+        // Do not add bpPerPx to frame both genes at once: setting it in the
+        // session leaves displays permanently in "Loading" and they never
+        // request data. That is not specific to this plugin - a plain
+        // BigWigAdapter track stalls the same way.
         displayedRegions: [
           {
             refName: 'ssa01',
-            start: 1_000_000,
-            end: 10_000_000,
+            start: 56_175_800,
+            end: 56_188_000,
             assemblyName: 'Ssal_v3.1',
           },
         ],
+        // Left empty deliberately: naming tracks here makes TrackContainer
+        // instantiate them before the assembly's refNames have resolved, and
+        // it throws on the not-yet-created display ("reading 'resizeHeight'"),
+        // which blanks the whole app. Turn tracks on from the track selector.
         tracks: [],
       },
     ],
@@ -271,9 +354,13 @@ function App() {
               <h3>StrandedBigWigPlugin</h3>
               <code className="plugin-type">AdapterType</code>
               <p>
-                On the <strong>volvox</strong> assembly, enable the{' '}
-                <strong>Volvox Stranded Coverage (+/-)</strong> track. Reverse
-                strand draws below the axis in a second color.
+                The view opens inside a reverse-strand gene on{' '}
+                <strong>Ssal_v3.1</strong> with{' '}
+                <strong>Liver RNA-seq (+/-)</strong> under{' '}
+                <em>BodyMap RNA-seq</em> in the track selector - real stranded
+                RNA-seq read from a forward/reverse BigWig pair. Reverse strand
+                draws below the axis in a second color; zoom out to ~56.18Mb to
+                reach the forward-strand gene next door.
               </p>
             </div>
           </div>
