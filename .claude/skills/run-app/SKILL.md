@@ -82,9 +82,45 @@ proxy serves curl (including Range requests) while closing Chromium's tunnels
 mid-exchange, so `raw.githubusercontent.com` returns 200 to curl and
 `Failed to fetch` in the page. Check with an in-page `fetch()`, not curl.
 
-**To verify anything that needs track data** (a new adapter, a renderer), serve
-the data locally instead of chasing the proxy — curl can fetch it even though
-the browser cannot:
+**To verify anything that needs track data** (a new adapter, a renderer), get
+the bytes into the page one of two ways.
+
+*Route interception* is the better option for remote or large data. Node can
+reach the network even though Chromium cannot, so forward the requests through
+the node side and leave the repo config untouched — no temporary URL edits to
+remember to revert. Range requests survive, so a 74MB BigWig costs only the few
+KB the adapter actually reads:
+
+```js
+await page.route('https://salmobase.org/**', async route => {
+  const req = route.request()
+  const headers = { ...req.headers() }
+  delete headers.host
+  const res = await fetch(req.url(), { headers, method: req.method() })
+  const body = Buffer.from(await res.arrayBuffer())
+  const h = {}
+  for (const [k, v] of res.headers) {
+    if (!/^(content-encoding|content-length|transfer-encoding)$/i.test(k)) h[k] = v
+  }
+  h['access-control-allow-origin'] = '*'
+  h['access-control-expose-headers'] = 'Content-Length,Content-Range'
+  await route.fulfill({ status: res.status, headers: h, body })
+})
+```
+
+`scripts/verify-stranded.mjs` does exactly this to check StrandedBigWigPlugin
+against the live Aqua-Faang BodyMap BigWigs:
+
+```bash
+.claude/skills/run-app/scripts/verify-stranded.sh   # starts and stops the server itself
+```
+
+It enables the Liver track, nudges the view, and asserts that every
+forward-strand (blue) pixel sits above every reverse-strand (red) pixel. Like
+`smoke.sh` it runs the driver out of the playwright temp dir, since `playwright`
+is not resolvable from the repo root.
+
+*Serving locally* is still simpler for small files:
 
 ```bash
 mkdir -p public/test_data
@@ -132,6 +168,24 @@ uppercased by CSS (`FILE`, `ADD`, `TOOLS`, `HELP`):
 ```js
 const menu = n => page.locator('button').filter({ hasText: new RegExp(`^${n}$`, 'i') }).first()
 ```
+
+**A newly enabled track stays in "Loading" until the view changes.** Ticking a
+track in the track selector does not make its display request data — the row
+renders with a bare `0` axis and no further HTTP requests are made, indefinitely.
+Pan, zoom, or type a location into the search box after enabling it and the
+fetch starts at once. This is the app shell, not your adapter: a stock
+`BigWigAdapter` track stalls identically, so add one as a control before
+suspecting a plugin.
+
+**Keep `defaultSession` views free of `tracks` and `bpPerPx`.** Naming tracks in
+a session's `tracks: []` array blanks the entire app on load with
+`Cannot read properties of undefined (reading 'resizeHeight')`, because
+TrackContainer instantiates them before their displays exist. Setting `bpPerPx`
+to frame a region applies the zoom but is not worth pairing with the stall
+above. A view opens at 1bp/px on the *left edge* of its region no matter how
+wide that region is, so to have the demo open on actual signal, start
+`displayedRegions` inside the feature you want shown rather than at a round
+number.
 
 **Handle `alert()` or clicks will hang.** `FeatureCountPlugin` reports through
 `alert()`. Without a dialog handler the click never resolves and the step times
