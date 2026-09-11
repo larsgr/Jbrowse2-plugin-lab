@@ -101,6 +101,18 @@ already splits its palette at zero (`posColor`/`negColor`, chosen only while
 `color` is left at its `#f0f` sentinel). Prefer moving data into the shape
 JBrowse already renders over writing a renderer.
 
+- **Transform every field the renderer reads, not just `score`.** Zoomed out,
+  `BigWigAdapter` stops returning raw values and returns summary bins carrying
+  `summary: true`, `minScore` and `maxScore`; `drawXY` reads those two fields
+  directly in its default `whiskers` mode. Negating `score` alone leaves the
+  reverse strand's whiskers positive, so it renders above the axis in
+  `posColor` — and the bug is invisible at high zoom, where there is no
+  summary and `score` is all the renderer has. Negating an interval also
+  reverses it: `[min, max]` becomes `[-max, -min]`, so the two must be swapped
+  or the whisker is drawn upside down. Any visual check of a quantitative
+  adapter has to cover both a zoomed-in and a zoomed-out view for this reason;
+  `.claude/skills/run-app/scripts/verify-stranded.sh` asserts both.
+
 ### Importing from JBrowse packages
 
 Only `@jbrowse/core` and `@jbrowse/react-app2` are resolvable from the project

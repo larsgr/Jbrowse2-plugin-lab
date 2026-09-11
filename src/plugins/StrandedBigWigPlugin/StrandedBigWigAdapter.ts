@@ -111,6 +111,25 @@ export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
                 source,
                 strand,
                 score: (data.score as number) * scale,
+                // Zoomed out far enough, BigWigAdapter stops returning raw
+                // values and returns summary bins carrying minScore/maxScore.
+                // drawXY reads those two fields directly - in the default
+                // 'whiskers' mode they are what it draws - so negating only
+                // `score` leaves the reverse strand's whiskers positive and it
+                // renders ABOVE the axis in posColor. The bug is invisible at
+                // high zoom, where there is no summary and `score` is all the
+                // renderer has.
+                //
+                // Negating an interval also reverses it: [min, max] becomes
+                // [-max, -min]. Swapping is not cosmetic - without it minScore
+                // would exceed maxScore and the whisker would be drawn upside
+                // down.
+                ...(data.summary && scale === -1
+                  ? {
+                      minScore: -(data.maxScore as number),
+                      maxScore: -(data.minScore as number),
+                    }
+                  : {}),
               })
             }),
           ),
