@@ -115,7 +115,9 @@ against the live Aqua-Faang BodyMap BigWigs:
 .claude/skills/run-app/scripts/verify-stranded.sh   # starts and stops the server itself
 ```
 
-It enables the Liver track, nudges the view, and asserts that every
+It enables the Liver track, first checks that the untouched default view
+draws reverse-strand signal (what a user sees on opening the page), then
+navigates to a zoomed-in and a zoomed-out region and asserts that every
 forward-strand (blue) pixel sits above every reverse-strand (red) pixel. Like
 `smoke.sh` it runs the driver out of the playwright temp dir, since `playwright`
 is not resolvable from the repo root.
@@ -169,20 +171,22 @@ uppercased by CSS (`FILE`, `ADD`, `TOOLS`, `HELP`):
 const menu = n => page.locator('button').filter({ hasText: new RegExp(`^${n}$`, 'i') }).first()
 ```
 
-**A newly enabled track stays in "Loading" until the view changes.** Ticking a
-track in the track selector does not make its display request data — the row
-renders with a bare `0` axis and no further HTTP requests are made, indefinitely.
-Pan, zoom, or type a location into the search box after enabling it and the
-fetch starts at once. This is the app shell, not your adapter: a stock
-`BigWigAdapter` track stalls identically, so add one as a control before
-suspecting a plugin.
+**Session regions must use canonical refNames.** If a newly enabled track
+renders an empty `0` axis and requests nothing past the file header, check the
+`refName` in `displayedRegions` before suspecting the adapter. JBrowse maps
+region names to each adapter's names through a table keyed by the assembly's
+*canonical* name (the `.fai` name, e.g. `1`), so an alias (`ssa01` from
+`alias.txt`) reaches every adapter untranslated and every track comes back
+empty — stock adapters included. Typing a location in the search box
+canonicalises the name, which makes this look like a "track wakes up once the
+view moves" stall. The track's `Loading` text in `innerText` is not evidence
+either: `LoadingOverlay` always renders it, just at `opacity: 0` when idle.
 
-**Keep `defaultSession` views free of `tracks` and `bpPerPx`.** Naming tracks in
+**Keep `defaultSession` views free of `tracks`.** Naming tracks in
 a session's `tracks: []` array blanks the entire app on load with
 `Cannot read properties of undefined (reading 'resizeHeight')`, because
-TrackContainer instantiates them before their displays exist. Setting `bpPerPx`
-to frame a region applies the zoom but is not worth pairing with the stall
-above. A view opens at 1bp/px on the *left edge* of its region no matter how
+TrackContainer instantiates them before their displays exist. `bpPerPx` works
+and frames the region at that zoom. Without it, a view opens at 1bp/px on the *left edge* of its region no matter how
 wide that region is, so to have the demo open on actual signal, start
 `displayedRegions` inside the feature you want shown rather than at a round
 number.
