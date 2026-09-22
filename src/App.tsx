@@ -269,13 +269,21 @@ const config = {
         // axis - is on screen before the user touches anything. Zoom out to
         // reach the forward gene.
         //
-        // Do not add bpPerPx to frame both genes at once: setting it in the
-        // session leaves displays permanently in "Loading" and they never
-        // request data. That is not specific to this plugin - a plain
-        // BigWigAdapter track stalls the same way.
+        // bpPerPx is left unset on purpose: framing both genes at once works,
+        // but the forward gene (~70000) then dominates the shared autoscale
+        // and flattens the reverse-strand signal this demo is about.
+        //
+        // refName must be the assembly's *canonical* name - the one in the
+        // FASTA .fai (`1`), not an alias from alias.txt (`ssa01`). JBrowse
+        // translates canonical names to each track's own names, keyed by the
+        // canonical name only, so an alias here reaches every adapter
+        // untranslated: the BigWigs are asked for a chromosome called `ssa01`,
+        // return nothing, and every track renders empty. Navigating from the
+        // search box canonicalises the name, which is why the tracks appeared
+        // to "wake up" after the view was moved.
         displayedRegions: [
           {
-            refName: 'ssa01',
+            refName: '1',
             start: 56_175_800,
             end: 56_188_000,
             assemblyName: 'Ssal_v3.1',

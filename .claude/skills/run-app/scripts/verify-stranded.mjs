@@ -65,9 +65,6 @@ console.log('enabled', TRACK)
 await page.keyboard.press('Escape')
 await page.waitForTimeout(2000)
 
-// A newly enabled track stays in "Loading" until the view changes - it never
-// requests data on its own. Reproduces with a stock BigWigAdapter track too,
-// so it is the app shell, not the adapter. Nudge the view to kick rendering.
 async function goTo(region) {
   // Re-resolve by handle: fill() changes the value, so a value-based locator
   // stops matching between calls.
@@ -113,11 +110,43 @@ function scanCanvases() {
 // the reverse strand above the axis in the second, so checking one zoom proves
 // nothing about the other.
 const CASES = [
-  { name: 'zoomed in (raw values)', region: 'ssa01:56,174,000..56,190,000', shot: '03-zoomed-in' },
-  { name: 'zoomed out (summary bins)', region: '1:158,800,000..159,800,000', shot: '04-zoomed-out' },
+  { name: 'zoomed in (raw values)', region: 'ssa01:56,174,000..56,190,000', shot: '04-zoomed-in' },
+  { name: 'zoomed out (summary bins)', region: '1:158,800,000..159,800,000', shot: '05-zoomed-out' },
 ]
 
 let failures = 0
+
+// First, the view exactly as a user opens it - no navigation. The default
+// session starts inside a reverse-strand gene, so reverse (red) signal must be
+// drawn. Navigating first would hide a broken default session: typing a
+// location canonicalises the refName, so a session region naming an alias
+// (`ssa01` rather than `1`) renders empty on load yet works after any move.
+{
+  const deadline = Date.now() + 60000
+  let negN = 0
+  while (Date.now() < deadline) {
+    negN = await page.evaluate(() => {
+      let best = 0
+      for (const c of document.querySelectorAll('canvas')) {
+        if (c.width < 200 || c.height < 40) continue
+        let d
+        try { d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data } catch { continue }
+        let n = 0
+        for (let i = 0; i < d.length; i += 4)
+          if (d[i + 3] >= 40 && Math.abs(d[i] - 209) < 60 && Math.abs(d[i + 1] - 73) < 60 && Math.abs(d[i + 2] - 91) < 60) n++
+        best = Math.max(best, n)
+      }
+      return best
+    })
+    if (negN > 20) break
+    await page.waitForTimeout(3000)
+  }
+  await page.screenshot({ path: `${SHOTS}/03-default-view.png` })
+  console.log('\ndefault view (no navigation)')
+  if (negN > 20) console.log(`  PASS: reverse strand drawn (${negN} red px)`)
+  else { console.log('  FAIL: default view draws no reverse-strand signal'); failures++ }
+}
+
 for (const c of CASES) {
   await goTo(c.region)
   const deadline = Date.now() + 120000
