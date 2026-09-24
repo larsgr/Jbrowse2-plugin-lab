@@ -1,9 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { createViewState, JBrowseApp } from '@jbrowse/react-app2'
 import HelloWorldPlugin from './plugins/HelloWorldPlugin'
 import FeatureCountPlugin from './plugins/FeatureCountPlugin'
 import CustomViewPlugin from './plugins/CustomViewPlugin'
 import StrandedBigWigPlugin from './plugins/StrandedBigWigPlugin'
+import ExtensionIcon from '@mui/icons-material/Extension'
+import ViewTimelineIcon from '@mui/icons-material/ViewTimeline'
+import PluginGuide, { type LabSession } from './PluginGuide'
 import './App.css'
 
 const VOLVOX_DATA_URL =
@@ -299,93 +302,91 @@ const config = {
   },
 }
 
+type Tab = 'browser' | 'plugins'
+
+// Keep in step with the max-width breakpoint in App.css.
+const NARROW_SCREEN = '(max-width: 899px)'
+
 function App() {
-  const state = useMemo(
-    () =>
-      createViewState({
-        config,
-        plugins: [
-          HelloWorldPlugin,
-          FeatureCountPlugin,
-          CustomViewPlugin,
-          StrandedBigWigPlugin,
-        ],
-      }),
-    [],
-  )
+  const state = useMemo(() => {
+    const state = createViewState({
+      config,
+      plugins: [
+        HelloWorldPlugin,
+        FeatureCountPlugin,
+        CustomViewPlugin,
+        StrandedBigWigPlugin,
+      ],
+    })
+    // On a phone-width view the default overlapping track label covers about
+    // a third of the plot, so put labels above each track instead. Wide
+    // screens keep the default layout.
+    if (window.matchMedia(NARROW_SCREEN).matches) {
+      for (const view of (state.session as unknown as LabSession).views) {
+        view.setTrackLabels?.('offset')
+      }
+    }
+    return state
+  }, [])
+  // Only matters on narrow screens, where the browser and the plugin guide
+  // are two tabs. Wide screens show both side by side and ignore it.
+  const [tab, setTab] = useState<Tab>('browser')
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <h1>🧬 JBrowse2 Plugin Lab</h1>
-        <p className="app-subtitle">
-          Full JBrowse App shell for validating Add/Tools menu plugin behavior
-        </p>
-      </header>
+    <div className="shell" data-tab={tab}>
+      <aside className="shell-guide">
+        <PluginGuide
+          session={state.session as unknown as LabSession}
+          onLaunch={() => setTab('browser')}
+        />
+      </aside>
 
-      <section className="plugin-info">
-        <h2>Loaded Plugins</h2>
-        <div className="plugin-cards">
-          <div className="plugin-card">
-            <div className="plugin-card-icon">🪟</div>
-            <div>
-              <h3>HelloWorldPlugin</h3>
-              <code className="plugin-type">WidgetType</code>
-              <p>
-                Open with <strong>Add → Open Hello World Widget</strong>.
-              </p>
-            </div>
-          </div>
-          <div className="plugin-card">
-            <div className="plugin-card-icon">🔢</div>
-            <div>
-              <h3>FeatureCountPlugin</h3>
-              <code className="plugin-type">configure() hook</code>
-              <p>
-                Try <strong>Tools → Count Tracks in View</strong>.
-              </p>
-            </div>
-          </div>
-          <div className="plugin-card">
-            <div className="plugin-card-icon">📊</div>
-            <div>
-              <h3>CustomViewPlugin</h3>
-              <code className="plugin-type">ViewType</code>
-              <p>
-                Open with <strong>Add → Open Sequence Stats View</strong>.
-              </p>
-            </div>
-          </div>
-          <div className="plugin-card">
-            <div className="plugin-card-icon">🧬</div>
-            <div>
-              <h3>StrandedBigWigPlugin</h3>
-              <code className="plugin-type">AdapterType</code>
-              <p>
-                The view opens inside a reverse-strand gene on{' '}
-                <strong>Ssal_v3.1</strong> with{' '}
-                <strong>Liver RNA-seq (+/-)</strong> under{' '}
-                <em>BodyMap RNA-seq</em> in the track selector - real stranded
-                RNA-seq read from a forward/reverse BigWig pair. Reverse strand
-                draws below the axis in a second color; zoom out to ~56.18Mb to
-                reach the forward-strand gene next door.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="viewer-section">
-        <h2>JBrowse2 Full App</h2>
-        <p className="viewer-hint">
-          The embedded app now includes the main menu bar, so plugin menu items
-          in <strong>Add</strong> and <strong>Tools</strong> are available.
-        </p>
-        <div className="viewer-wrapper">
+      <main className="shell-browser">
+        {/* JBrowseApp sizes itself to 100vh; App.css pins it to this box. */}
+        <div className="jb-host">
           <JBrowseApp viewState={state} />
         </div>
-      </section>
+      </main>
+
+      <nav className="tabbar" aria-label="Sections">
+        <TabButton
+          label="Browser"
+          active={tab === 'browser'}
+          onClick={() => setTab('browser')}
+          icon={<ViewTimelineIcon />}
+        />
+        <TabButton
+          label="Plugins"
+          active={tab === 'plugins'}
+          onClick={() => setTab('plugins')}
+          icon={<ExtensionIcon />}
+        />
+      </nav>
     </div>
+  )
+}
+
+function TabButton({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string
+  icon: ReactNode
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="tabbar-item"
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   )
 }
 
