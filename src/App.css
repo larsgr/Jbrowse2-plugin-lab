@@ -196,6 +196,13 @@
   min-height: 0;
 }
 
+/* Sideways swipes and pinches over the tracks are handled in
+   src/touchNavigation.ts; the browser keeps only vertical scrolling there, so
+   a pinch zooms the genome view rather than the page. */
+.jb-host [data-testid='tracksContainer'] {
+  touch-action: pan-y;
+}
+
 /* ---------- narrow screens: native-style tabs ---------- */
 
 @media (max-width: 899px) {

@@ -71,6 +71,16 @@ them on a phone viewport after a JBrowse bump. The drawer header is an
 `isolation: isolate` on the browser pane keeps JBrowse's z-indexes (1200+)
 from painting over the guide.
 
+JBrowse's `LinearGenomeView` has no touch handling (mouse drag and wheel only),
+so `src/touchNavigation.ts` adds swipe-to-pan (with fling) and pinch-to-zoom
+from outside, via delegated listeners on `.jb-host`. It maps a touch to its
+view through the `view-container-<id>` test id and drives the view's own
+`horizontalScroll`/`zoomTo`. A pinch only previews through `setScaleFactor`
+(the CSS `scaleX` that ctrl+wheel zoom uses, which scales about the view's
+centre) and commits one `zoomTo` on release, so tracks aren't re-rendered on
+every frame. `touch-action: pan-y` on the tracks container keeps native
+vertical scrolling and stops a pinch from zooming the page.
+
 The guide's launch buttons look up the plugins' own `configure()` menu items
 via `session.menus()` and call their `onClick`, so they exercise the same code
 path as the menu bar — don't reimplement plugin behavior there.

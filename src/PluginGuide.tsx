@@ -23,6 +23,7 @@ interface Menu {
 export interface LabSession {
   menus: () => Menu[]
   views: Array<{
+    id: string
     type: string
     showTrack?: (trackId: string) => void
     setTrackLabels?: (setting: string) => void
