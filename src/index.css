@@ -4,11 +4,13 @@
   font-weight: 400;
   color-scheme: light;
   color: #333;
-  background-color: #f5f5f5;
+  background-color: #0d233f;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
@@ -20,13 +22,17 @@ a:hover {
   color: #1560a0;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 2rem;
-  line-height: 1.1;
+  /* The page never scrolls as a whole - each pane scrolls itself - so kill
+     rubber-banding and pull-to-refresh, which would drag the app shell around. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }

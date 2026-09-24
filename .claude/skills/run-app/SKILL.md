@@ -156,7 +156,7 @@ Two selector traps, both of which produce *false passes* rather than obvious
 breakage — worth knowing before you trust a hand-written check:
 
 **Scope menu items to the open popover.** The demo page repeats every menu label
-in its "Loaded Plugins" description cards ("Open with Add → Open Hello World
+in its plugin guide cards ("Open with Add → Open Hello World
 Widget"). An unscoped `getByText('Open Hello World Widget')` matches that card
 and reports success while the menu is still shut:
 
@@ -206,6 +206,15 @@ failure cascades and the output stops telling you what actually broke.
 
 **React inputs need `fill`/`type`**, not `eval el.value = ...` — the latter
 doesn't fire React's onChange, so MST never updates.
+
+## Checking the phone layout
+
+`smoke.sh` runs at 1600px wide, where the plugin guide is a sidebar. The phone
+layout (bottom tab bar, full-screen widget sheet) only exists below 900px, so
+check it separately with a Playwright device profile such as
+`devices['iPhone 13']`. On a phone the guide covers the browser until you tap
+the **Browser** tab, and the guide's launch buttons (`Open widget`,
+`Open view`, ...) switch to it for you.
 
 ## Adding a plugin to the smoke test
 

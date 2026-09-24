@@ -53,6 +53,28 @@ the dev server needs network access to render anything.
 
 `createViewState` is wrapped in `useMemo(..., [])` — it must be created exactly once.
 
+### The mobile app shell
+
+The page is a full-viewport app shell (`App.tsx` + `App.css`), installable as a
+standalone app via `public/manifest.webmanifest` and the `apple-*` tags in
+`index.html`. At `max-width: 899px` it is two tabs — the browser and the plugin
+guide (`src/PluginGuide.tsx`) — switched by a bottom tab bar; wider screens show
+the guide as a sidebar. The guide covers the browser rather than unmounting it,
+so JBrowse never sees a 0px-wide view.
+
+`App.css` overrides some of JBrowse's own layout, all scoped under `.jb-host`:
+its root hard-codes `height: 100vh` (pinned to the host box instead), and on
+narrow screens the widget drawer becomes a full-screen sheet and the menu bar
+scrolls sideways. These key off MUI class names and DOM nesting, so re-check
+them on a phone viewport after a JBrowse bump. The drawer header is an
+`AppBar` too, which is why the menu-bar selectors exclude `.MuiPaper-root`.
+`isolation: isolate` on the browser pane keeps JBrowse's z-indexes (1200+)
+from painting over the guide.
+
+The guide's launch buttons look up the plugins' own `configure()` menu items
+via `session.menus()` and call their `onClick`, so they exercise the same code
+path as the menu bar — don't reimplement plugin behavior there.
+
 ### Plugin anatomy
 
 Each plugin is a directory under `src/plugins/<Name>/` exporting a default class
@@ -198,6 +220,11 @@ before merging to `main`.
 
 ## Known stale bits
 
+- `.claude/skills/run-app/scripts/verify-stranded.sh`'s zoomed-out check is
+  sensitive to the genome view's width: at some widths a narrow red (reverse)
+  spike is drawn above the axis and the check fails. This reproduces on the
+  pre-redesign layout too (a 1300px window instead of 1600px), so it is a
+  rendering/adapter issue to investigate, not a layout regression.
 - `README.md` predates the current setup: it claims `@jbrowse/react-linear-genome-view`
   and JBrowse v3.1.0. The code actually uses `@jbrowse/react-app2` at v4.1.14
   (see `package.json`). Trust `package.json` over the README.
