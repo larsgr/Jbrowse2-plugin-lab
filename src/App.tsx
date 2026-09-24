@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { createViewState, JBrowseApp } from '@jbrowse/react-app2'
 import HelloWorldPlugin from './plugins/HelloWorldPlugin'
 import FeatureCountPlugin from './plugins/FeatureCountPlugin'
@@ -7,6 +7,7 @@ import StrandedBigWigPlugin from './plugins/StrandedBigWigPlugin'
 import ExtensionIcon from '@mui/icons-material/Extension'
 import ViewTimelineIcon from '@mui/icons-material/ViewTimeline'
 import PluginGuide, { type LabSession } from './PluginGuide'
+import { useTouchNavigation } from './touchNavigation'
 import './App.css'
 
 const VOLVOX_DATA_URL =
@@ -331,6 +332,10 @@ function App() {
   // Only matters on narrow screens, where the browser and the plugin guide
   // are two tabs. Wide screens show both side by side and ignore it.
   const [tab, setTab] = useState<Tab>('browser')
+  // JBrowse's genome view only knows mouse drags and the wheel; add swipe to
+  // pan and pinch to zoom on top of it.
+  const hostRef = useRef<HTMLDivElement>(null)
+  useTouchNavigation(hostRef, state.session as unknown as LabSession)
 
   return (
     <div className="shell" data-tab={tab}>
@@ -343,7 +348,7 @@ function App() {
 
       <main className="shell-browser">
         {/* JBrowseApp sizes itself to 100vh; App.css pins it to this box. */}
-        <div className="jb-host">
+        <div className="jb-host" ref={hostRef}>
           <JBrowseApp viewState={state} />
         </div>
       </main>
