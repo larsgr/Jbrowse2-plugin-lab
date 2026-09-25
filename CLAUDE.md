@@ -179,7 +179,10 @@ strings and `position` maps them back).
 `.claude/skills/run-app/scripts/verify-stranded.sh` covers all of this:
 zoomed-in, zoomed-out, a region with both strands at once, the two-strand
 tooltip, and the log scale. The pre-renderer code fails the zoomed-out and
-both-strands checks.
+both-strands checks. The log switch is made on a high-coverage region on
+purpose: for a moment after switching, the domain is still in linear units,
+and anything that reads it as log2 overflows past ~1024 (2^x = Infinity). The
+script fails on page errors and on errors MobX logs from reactions.
 
 ### Importing from JBrowse packages
 

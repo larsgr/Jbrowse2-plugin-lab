@@ -114,7 +114,12 @@ export default function stateModelFactory(
          * log2 units that would read as 1023, 65535, ...
          */
         get ticks() {
-          const { domain, height, inverted, strandedScale } = self
+          const { domain, height, inverted } = self
+          // Label in the scale the domain was computed in. Right after the
+          // scale changes, the domain still comes from the old scale's stats:
+          // reading a linear max of 5000 as log2 units would label 2^5000.
+          const strandedScale: StrandedScale =
+            self.statsScale ?? self.strandedScale
           if (!domain) {
             return undefined
           }
@@ -208,11 +213,17 @@ export default function stateModelFactory(
 
 /** Round raw values (0, ±1, ±10, ±100, ...) inside a log2(x+1) domain. */
 function logTicks([lo, hi]: [number, number]) {
+  // Compared in log2 space: untransforming the limit overflows to Infinity
+  // past ~1024 log2 units, and `p <= Infinity` would never stop. 10^308 is
+  // the largest power of ten a double holds.
   const side = (limit: number, sign: 1 | -1) => {
     const ticks: number[] = []
-    const raw = Math.abs(untransformScore(limit, 'log2'))
-    for (let p = 1; p <= raw; p *= 10) {
-      ticks.push(sign * Math.log2(p + 1))
+    for (let e = 0; e <= 308; e++) {
+      const t = Math.log2(10 ** e + 1)
+      if (t > Math.abs(limit)) {
+        break
+      }
+      ticks.push(sign * t)
     }
     return ticks
   }
@@ -238,7 +249,10 @@ function spaced(values: number[], toPx: (v: number) => number, minGap = 14) {
   return kept.sort((a, b) => a - b)
 }
 
-function formatTick(n: number) {
+function formatTick(value: number) {
+  // Round first: a log tick's raw value comes back as 999999.99..., which
+  // would otherwise print as 1000k rather than 1M.
+  const n = +value.toPrecision(3)
   const abs = Math.abs(n)
   const [div, suffix] =
     abs >= 1e9 ? [1e9, 'G'] : abs >= 1e6 ? [1e6, 'M'] : abs >= 1e3 ? [1e3, 'k'] : [1, '']
