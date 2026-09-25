@@ -27,6 +27,8 @@ export interface LabSession {
     type: string
     showTrack?: (trackId: string) => void
     setTrackLabels?: (setting: string) => void
+    hideHeader?: boolean
+    setHideHeader?: (hide: boolean) => void
   }>
   notify: (message: string, level?: string) => void
   minimizeWidgetDrawer: () => void

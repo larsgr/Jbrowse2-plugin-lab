@@ -1,9 +1,11 @@
 /*
  * App shell. Two layouts from one DOM:
  *   - wide (>= 900px): plugin guide as a sidebar, browser fills the rest.
- *   - narrow: full-screen browser and plugin guide as two tabs switched from a
- *     bottom tab bar, like a native app. The browser stays mounted and laid
- *     out underneath the guide, so JBrowse never sees a 0px-wide view.
+ *   - narrow (< 900px wide, or a phone on its side): full-screen browser and
+ *     plugin guide as two tabs switched from a bottom tab bar, like a native
+ *     app. The browser stays mounted and laid out underneath the guide, so
+ *     JBrowse never sees a 0px-wide view.
+ * Either can switch to full-screen tracks (data-fullscreen, see fullScreen.ts).
  */
 :root {
   --navy: #0d233f;
@@ -176,6 +178,9 @@
   inset: var(--safe-top) var(--safe-right) 0 0;
   overflow: hidden;
   background: #fff;
+  /* Own stacking context, so the full-screen exit button can sit above
+     JBrowse's z-indexed panels. */
+  z-index: 0;
 }
 
 .jb-host > div,
@@ -205,7 +210,7 @@
 
 /* ---------- narrow screens: native-style tabs ---------- */
 
-@media (max-width: 899px) {
+@media (max-width: 899px), (max-height: 499px) and (pointer: coarse) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) calc(var(--tabbar-h) + var(--safe-bottom));
@@ -328,6 +333,87 @@
     max-width: calc(100% - 24px) !important;
     max-height: calc(100% - 24px - var(--safe-top) - var(--safe-bottom)) !important;
   }
+}
+
+/* ---------- phone on its side ---------- */
+
+/* Only ~350-430px of height to share: a slimmer tab bar and menu bar. */
+@media (max-height: 499px) and (pointer: coarse) {
+  :root {
+    --tabbar-h: 40px;
+  }
+
+  .tabbar-item {
+    flex-direction: row;
+    gap: 6px;
+    font-size: 0.8rem;
+  }
+
+  .tabbar-item svg {
+    font-size: 1.25rem;
+  }
+
+  .jb-host .MuiScopedCssBaseline-root > div > div:not(.MuiPaper-root) > .MuiAppBar-root > .MuiToolbar-root {
+    min-height: 40px;
+  }
+}
+
+/* ---------- full-screen tracks ---------- */
+
+/* Everything but the views goes: tab bar, guide and JBrowse's menu bar. The
+   views' navigation headers are hidden through the model (setHideHeader in
+   fullScreen.ts), which swaps in JBrowse's compact floating zoom buttons.
+   Each view's 28px title bar stays: it holds the view menu, and JBrowse pins
+   the sticky ruler at a fixed offset below it (VIEW_HEADER_HEIGHT), so hiding
+   it slides the ruler down over the first track. */
+.shell[data-fullscreen] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.shell[data-fullscreen] .shell-browser {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.shell[data-fullscreen] .shell-guide,
+.shell[data-fullscreen] .tabbar {
+  display: none;
+}
+
+.shell[data-fullscreen] .jb-host {
+  inset: 0;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+
+.shell[data-fullscreen] .jb-host .MuiScopedCssBaseline-root > div > div:not(.MuiPaper-root):has(> .MuiAppBar-root) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.shell[data-fullscreen] .jb-host .MuiScopedCssBaseline-root > div > div:not(.MuiPaper-root) > .MuiAppBar-root {
+  display: none;
+}
+
+.fullscreen-exit {
+  position: absolute;
+  z-index: 1;
+  right: calc(12px + var(--safe-right));
+  bottom: calc(12px + var(--safe-bottom));
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(13, 35, 63, 0.75);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.fullscreen-exit:focus-visible {
+  outline: 3px solid #4fb3ff;
+  outline-offset: 2px;
 }
 
 /* Comfortable touch targets in JBrowse menus on touch devices. */
