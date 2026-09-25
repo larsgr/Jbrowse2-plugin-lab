@@ -40,6 +40,13 @@ await page.route('https://salmobase.org/**', async route => {
 
 const errors = []
 page.on('pageerror', e => errors.push(String(e)))
+// A throw inside a MobX reaction (e.g. a display's `ticks` getter) is caught
+// by MobX and only logged, so it never reaches 'pageerror'.
+page.on('console', m => {
+  if (m.type() === 'error' && /RangeError|out of memory|Invalid array length/i.test(m.text())) {
+    errors.push(m.text().slice(0, 200))
+  }
+})
 
 await page.goto(process.env.URL || 'http://localhost:5173/Jbrowse2-plugin-lab/', { waitUntil: 'domcontentloaded' })
 
@@ -208,14 +215,26 @@ for (const c of CASES) {
 // Log scale: the stock d3 log scale is undefined below zero, so this is the
 // display's own signed log2(x+1). Switch it from the track menu and check the
 // strands are still split at the axis and the axis is labelled in raw units.
+//
+// Switch at the zoomed-in region, which peaks around 60k: for a moment after
+// the switch the domain still comes from the linear stats, and reading that
+// as log2 units once overflowed to 2^60000 = Infinity and hung building ticks
+// (only above ~1024, so a low-coverage region hides it). Then check the
+// strands on the two-strand region.
 {
   console.log('\nlog scale')
+  await goTo(CASES[0].region)
+  await page.waitForTimeout(8000)
   await page.locator('[data-testid="track_menu_icon"]').first().click()
   const item = t => page.locator('[role="menu"]').last().getByText(t, { exact: true })
   await item('Score').click()
   await item('Scale type').click()
   await item('Log, log2(x+1)').click()
   await page.keyboard.press('Escape')
+  await page.waitForTimeout(8000)
+  const highLabels = await page.locator('svg text').allTextContents()
+  console.log(`  axis labels at ${CASES[0].region}:`, highLabels.join(' '))
+  await goTo(CASES[2].region)
   await page.waitForTimeout(8000)
   let result = null
   const deadline = Date.now() + 60000
@@ -232,5 +251,6 @@ for (const c of CASES) {
 
 console.log('\nsalmobase requests proxied:', n)
 console.log('page errors:', errors.length ? errors.slice(0, 3) : 'none')
+if (errors.length) failures++
 await browser.close()
 process.exit(failures ? 1 : 0)
