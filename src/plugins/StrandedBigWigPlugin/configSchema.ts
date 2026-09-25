@@ -5,13 +5,11 @@ import { ConfigurationSchema } from '@jbrowse/core/configuration'
  * coverage for the same sample.
  *
  * The colors are deliberately NOT configured here. Coloring belongs to the
- * renderer, and the built-in wiggle renderer already splits its palette at
- * zero: `posColor` for scores above the axis, `negColor` for scores below it.
- * Because this adapter negates the reverse strand, that split lands exactly on
- * the strand boundary, so forward/reverse get different colors out of the box
- * and can be re-themed with the standard `posColor`/`negColor` keys on the
+ * renderer: StrandedXYPlotRenderer draws the forward strand in `posColor` and
+ * the reverse strand in `negColor`, re-themed with those standard keys on the
  * track's renderer. Duplicating them here would give two competing sources of
- * truth for the same pixel.
+ * truth for the same pixel. The same goes for the log transform, which is a
+ * display setting (track menu → Score → Scale type) rather than adapter config.
  */
 const configSchema = ConfigurationSchema(
   'StrandedBigWigAdapter',

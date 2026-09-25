@@ -60,18 +60,13 @@ const bodyMapStrandedTracks = BODYMAP_TISSUES.map(tissue => {
         locationType: 'UriLocation',
       },
     },
+    // Stranded display: each strand drawn as its own series, a tooltip
+    // reporting both, and a log scale (track menu → Score → Scale type) that
+    // works below the axis. Colors default to blue (+) / red (-).
     displays: [
       {
-        type: 'LinearWiggleDisplay',
-        displayId: `${trackId}-LinearWiggleDisplay`,
-        defaultRendering: 'xyplot',
-        renderers: {
-          XYPlotRenderer: {
-            type: 'XYPlotRenderer',
-            posColor: '#1a7abf',
-            negColor: '#d1495b',
-          },
-        },
+        type: 'LinearStrandedWiggleDisplay',
+        displayId: `${trackId}-LinearStrandedWiggleDisplay`,
       },
     ],
   }
@@ -219,11 +214,10 @@ const config = {
       // hide a bug that read the forward file for both strands.
       //
       // These two stand-ins have very different magnitudes (coverage peaks
-      // near 40, the microarray near 800), so the demo looks lopsided: the
-      // blue forward strand is a thin band above the axis and the red reverse
-      // strand fills the space below it. That is the shared autoscale doing
-      // its job on mismatched data, not a plugin bug. Real stranded pairs from
-      // one sample have comparable ranges and render symmetrically.
+      // near 40, the microarray near 800). On a linear scale the blue forward
+      // strand is a thin band above the axis and the red reverse strand fills
+      // the space below it - the shared autoscale doing its job on mismatched
+      // data, not a plugin bug.
       type: 'QuantitativeTrack',
       trackId: 'volvox_stranded',
       name: 'Volvox Stranded Coverage (+/-)',
@@ -240,18 +234,13 @@ const config = {
           locationType: 'UriLocation',
         },
       },
+      // The two stand-ins differ ~20x in magnitude, so this one opens on the
+      // log scale, where both strands are readable at once.
       displays: [
         {
-          type: 'LinearWiggleDisplay',
-          displayId: 'volvox_stranded-LinearWiggleDisplay',
-          defaultRendering: 'xyplot',
-          renderers: {
-            XYPlotRenderer: {
-              type: 'XYPlotRenderer',
-              posColor: '#1a7abf',
-              negColor: '#d1495b',
-            },
-          },
+          type: 'LinearStrandedWiggleDisplay',
+          displayId: 'volvox_stranded-LinearStrandedWiggleDisplay',
+          scaleType: 'log',
         },
       ],
     },

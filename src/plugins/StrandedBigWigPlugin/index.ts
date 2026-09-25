@@ -2,14 +2,27 @@ import Plugin from '@jbrowse/core/Plugin'
 import AdapterType from '@jbrowse/core/pluggableElementTypes/AdapterType'
 import type PluginManager from '@jbrowse/core/PluginManager'
 import configSchema from './configSchema'
+import registerStrandedXYPlotRenderer from './StrandedXYPlotRenderer'
+import registerLinearStrandedWiggleDisplay from './LinearStrandedWiggleDisplay'
 
 /**
- * StrandedBigWigPlugin demonstrates the AdapterType extension point.
+ * StrandedBigWigPlugin: stranded coverage from a forward/reverse BigWig pair.
  *
- * An adapter turns a file format into features JBrowse can render. Unlike the
- * other plugins in this lab it registers no UI at all: it plugs in below the
- * renderers, so a track using it is configured like any other
- * QuantitativeTrack and picks up the whole built-in wiggle stack.
+ * It spans three extension points, because a stranded plot needs changes at
+ * every layer:
+ *
+ *   - AdapterType `StrandedBigWigAdapter` reads both files, flips the reverse
+ *     strand below the axis, applies the optional log transform, and tags
+ *     every feature with its strand.
+ *   - RendererType `StrandedXYPlotRenderer` draws the two strands as separate
+ *     series, so one strand's colors and whiskers can't bleed into the other
+ *     where both have signal.
+ *   - DisplayType `LinearStrandedWiggleDisplay` extends the stock wiggle
+ *     display with a two-strand tooltip, a signed log2(x+1) scale, and an
+ *     axis labelled in raw units.
+ *
+ * An adapter alone is not enough: the stock renderer and tooltip assume one
+ * series, and the stock log scale cannot go below zero.
  *
  * Usage in a track config:
  *
@@ -22,15 +35,16 @@ import configSchema from './configSchema'
  *       forwardBigWigLocation: { uri: '...forward.bw', locationType: 'UriLocation' },
  *       reverseBigWigLocation: { uri: '...reverse.bw', locationType: 'UriLocation' },
  *     },
+ *     displays: [{
+ *       type: 'LinearStrandedWiggleDisplay',
+ *       displayId: 'my_stranded_coverage-LinearStrandedWiggleDisplay',
+ *       // optional: open on the log scale, and re-theme the strands
+ *       scaleType: 'log',
+ *       renderers: {
+ *         StrandedXYPlotRenderer: { posColor: '#1a7abf', negColor: '#d1495b' },
+ *       },
+ *     }],
  *   }
- *
- * To re-theme the strands, set posColor/negColor on the track's renderer:
- *
- *   displays: [{
- *     type: 'LinearWiggleDisplay',
- *     displayId: 'my_stranded_coverage-display',
- *     renderers: { XYPlotRenderer: { posColor: '#1a7abf', negColor: '#d1495b' } },
- *   }]
  */
 export default class StrandedBigWigPlugin extends Plugin {
   name = 'StrandedBigWigPlugin'
@@ -48,6 +62,8 @@ export default class StrandedBigWigPlugin extends Plugin {
             import('./StrandedBigWigAdapter').then(m => m.default),
         }),
     )
+    registerStrandedXYPlotRenderer(pluginManager)
+    registerLinearStrandedWiggleDisplay(pluginManager)
   }
 
   configure(_pluginManager: PluginManager) {

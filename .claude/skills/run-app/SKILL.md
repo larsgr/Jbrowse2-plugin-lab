@@ -117,8 +117,18 @@ against the live Aqua-Faang BodyMap BigWigs:
 
 It enables the Liver track, first checks that the untouched default view
 draws reverse-strand signal (what a user sees on opening the page), then
-navigates to a zoomed-in and a zoomed-out region and asserts that every
-forward-strand (blue) pixel sits above every reverse-strand (red) pixel. Like
+navigates to a zoomed-in region, a zoomed-out region, and a region with heavy
+signal on both strands at once, asserting each time that every forward-strand
+(blue) pixel sits above every reverse-strand (red) pixel. It then sweeps the
+mouse until the tooltip reports values for both strands, and switches the
+track menu's **Score → Scale type** to log and re-checks the split and the
+raw-unit axis labels. The both-strands region is the one that separates
+`StrandedXYPlotRenderer` from the stock `XYPlotRenderer`, which painted red
+inside the blue there.
+
+Hover over the *on-screen* part of the track: a block's bounding box can start
+behind the guide sidebar (negative x), so moving to a fraction of the first
+block's box hovers nothing and the tooltip check fails for the wrong reason. Like
 `smoke.sh` it runs the driver out of the playwright temp dir, since `playwright`
 is not resolvable from the repo root.
 
