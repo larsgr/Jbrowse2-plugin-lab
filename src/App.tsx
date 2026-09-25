@@ -6,8 +6,11 @@ import CustomViewPlugin from './plugins/CustomViewPlugin'
 import StrandedBigWigPlugin from './plugins/StrandedBigWigPlugin'
 import ExtensionIcon from '@mui/icons-material/Extension'
 import ViewTimelineIcon from '@mui/icons-material/ViewTimeline'
+import FullscreenIcon from '@mui/icons-material/Fullscreen'
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit'
 import PluginGuide, { type LabSession } from './PluginGuide'
 import { useTouchNavigation } from './touchNavigation'
+import { useFullScreen } from './fullScreen'
 import './App.css'
 
 const VOLVOX_DATA_URL =
@@ -305,8 +308,11 @@ const config = {
 
 type Tab = 'browser' | 'plugins'
 
-// Keep in step with the max-width breakpoint in App.css.
-const NARROW_SCREEN = '(max-width: 899px)'
+// Keep in step with the phone breakpoint in App.css. A phone on its side is
+// wider than 899px (a large iPhone is ~930px) but only ~400px tall, and the
+// 340px guide sidebar would leave the genome view less than half the screen.
+const NARROW_SCREEN =
+  '(max-width: 899px), (max-height: 499px) and (pointer: coarse)'
 
 function App() {
   const state = useMemo(() => {
@@ -336,9 +342,16 @@ function App() {
   // pan and pinch to zoom on top of it.
   const hostRef = useRef<HTMLDivElement>(null)
   useTouchNavigation(hostRef, state.session as unknown as LabSession)
+  // Tracks only, edge to edge: on a phone the menu bars and tab bar otherwise
+  // take most of a landscape screen.
+  const fullScreen = useFullScreen(state.session as unknown as LabSession)
 
   return (
-    <div className="shell" data-tab={tab}>
+    <div
+      className="shell"
+      data-tab={tab}
+      data-fullscreen={fullScreen.active || undefined}
+    >
       <aside className="shell-guide">
         <PluginGuide
           session={state.session as unknown as LabSession}
@@ -351,6 +364,17 @@ function App() {
         <div className="jb-host" ref={hostRef}>
           <JBrowseApp viewState={state} />
         </div>
+        {fullScreen.active && (
+          <button
+            type="button"
+            className="fullscreen-exit"
+            aria-label="Exit full screen"
+            title="Exit full screen"
+            onClick={fullScreen.exit}
+          >
+            <FullscreenExitIcon />
+          </button>
+        )}
       </main>
 
       <nav className="tabbar" aria-label="Sections">
@@ -366,6 +390,14 @@ function App() {
           onClick={() => setTab('plugins')}
           icon={<ExtensionIcon />}
         />
+        <TabButton
+          label="Full screen"
+          onClick={() => {
+            setTab('browser')
+            fullScreen.enter()
+          }}
+          icon={<FullscreenIcon />}
+        />
       </nav>
     </div>
   )
@@ -379,7 +411,7 @@ function TabButton({
 }: {
   label: string
   icon: ReactNode
-  active: boolean
+  active?: boolean
   onClick: () => void
 }) {
   return (

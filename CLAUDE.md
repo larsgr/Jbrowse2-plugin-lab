@@ -57,7 +57,9 @@ the dev server needs network access to render anything.
 
 The page is a full-viewport app shell (`App.tsx` + `App.css`), installable as a
 standalone app via `public/manifest.webmanifest` and the `apple-*` tags in
-`index.html`. At `max-width: 899px` it is two tabs — the browser and the plugin
+`index.html`. At `max-width: 899px` (or a phone on its side:
+`max-height: 499px` with a coarse pointer — keep `NARROW_SCREEN` in `App.tsx`
+in step) it is two tabs — the browser and the plugin
 guide (`src/PluginGuide.tsx`) — switched by a bottom tab bar; wider screens show
 the guide as a sidebar. The guide covers the browser rather than unmounting it,
 so JBrowse never sees a 0px-wide view.
@@ -80,6 +82,13 @@ view through the `view-container-<id>` test id and drives the view's own
 centre) and commits one `zoomTo` on release, so tracks aren't re-rendered on
 every frame. `touch-action: pan-y` on the tracks container keeps native
 vertical scrolling and stops a pinch from zooming the page.
+
+The tab bar's **Full screen** button (`src/fullScreen.ts`) hides the tab bar
+and JBrowse's menu bar, calls each view's own `setHideHeader(true)` (restored
+on exit), and requests browser full screen where supported (not iPhone
+Safari). The view title bar stays on purpose: JBrowse pins its sticky ruler at
+`VIEW_HEADER_HEIGHT` below it, so hiding it slides the ruler over the first
+track.
 
 The guide's launch buttons look up the plugins' own `configure()` menu items
 via `session.menus()` and call their `onClick`, so they exercise the same code
