@@ -89,12 +89,13 @@ const PLUGINS: PluginCard[] = [
   {
     name: 'StrandedBigWigPlugin',
     icon: '🧬',
-    extensionPoint: 'AdapterType',
+    extensionPoint: 'Adapter + renderer + display',
     description:
       'Real stranded RNA-seq from a forward/reverse BigWig pair. The reverse ' +
-      'strand draws below the axis in a second color. The view opens inside ' +
-      'a reverse-strand gene on Ssal_v3.1; zoom out to reach the ' +
-      'forward-strand gene next door.',
+      'strand draws below the axis in a second color; hover to read both ' +
+      'strands, and switch to a log scale from the track menu (Score → ' +
+      'Scale type). The view opens inside a reverse-strand gene on ' +
+      'Ssal_v3.1; zoom out to reach the forward-strand gene next door.',
     path: 'Track selector → BodyMap RNA-seq → Liver RNA-seq (+/-)',
     actionLabel: 'Show Liver track',
     run: s => {

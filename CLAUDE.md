@@ -116,7 +116,7 @@ The three examples map to the three extension points:
 | `HelloWorldPlugin` | `WidgetType` (right drawer panel) | Add → Open Hello World Widget |
 | `CustomViewPlugin` | `ViewType` (main visualization panel) | Add → Open Sequence Stats View |
 | `FeatureCountPlugin` | `configure()` only, no new types | Tools → Count Tracks in View |
-| `StrandedBigWigPlugin` | `AdapterType` (no UI at all) | track config, then the track selector |
+| `StrandedBigWigPlugin` | `AdapterType` + `RendererType` + `DisplayType` | track config, then the track selector |
 
 ### Writing an AdapterType (`StrandedBigWigPlugin`)
 
@@ -136,23 +136,50 @@ one generalise:
   quantitative adapters must override `getMultiRegionFeatureDensityStats()` to
   return `{ featureDensity: 0 }`, as `BigWigAdapter` and `MultiWiggleAdapter` do.
 
-The strand flip and its two colors are not custom code: negating the reverse
-strand's scores puts them below the axis, and the built-in wiggle renderer
-already splits its palette at zero (`posColor`/`negColor`, chosen only while
-`color` is left at its `#f0f` sentinel). Prefer moving data into the shape
-JBrowse already renders over writing a renderer.
-
 - **Transform every field the renderer reads, not just `score`.** Zoomed out,
   `BigWigAdapter` stops returning raw values and returns summary bins carrying
-  `summary: true`, `minScore` and `maxScore`; `drawXY` reads those two fields
-  directly in its default `whiskers` mode. Negating `score` alone leaves the
-  reverse strand's whiskers positive, so it renders above the axis in
-  `posColor` — and the bug is invisible at high zoom, where there is no
-  summary and `score` is all the renderer has. Negating an interval also
-  reverses it: `[min, max]` becomes `[-max, -min]`, so the two must be swapped
-  or the whisker is drawn upside down. Any visual check of a quantitative
-  adapter has to cover both a zoomed-in and a zoomed-out view for this reason;
-  `.claude/skills/run-app/scripts/verify-stranded.sh` asserts both.
+  `summary: true`, `minScore` and `maxScore`, which the renderer draws as
+  whiskers. Negating `score` alone leaves the reverse strand's whiskers
+  positive — and the bug is invisible at high zoom, where there is no summary
+  and `score` is all the renderer has. Negating an interval also reverses it:
+  `[min, max]` becomes `[-max, -min]`, so the two must be swapped or the
+  whisker is drawn upside down. Any visual check of a quantitative adapter has
+  to cover both a zoomed-in and a zoomed-out view for this reason.
+
+### Why the stranded track also needs a renderer and a display
+
+The plugin started as an adapter alone, relying on the stock `XYPlotRenderer`
+splitting its palette at zero. That breaks where both strands have signal at
+the same position, which real RNA-seq has all the time:
+
+- `drawXY`'s whiskers pass caches the last color it computed and only refreshes
+  the cache on summary bins. The two files' features arrive interleaved, and
+  one file can return raw values while the other returns summaries, so the
+  reverse strand's red leaks into forward-strand bars.
+- The renderer keeps one feature per pixel column for mouseover, so the
+  tooltip shows whichever strand came first — never both.
+- The stock log scale is a d3 `scaleLog`, undefined for the reverse strand's
+  negative values.
+
+So `StrandedXYPlotRenderer` draws each strand as its own series (keyed on the
+`strand` the adapter tags every feature with) and returns per-strand,
+per-pixel tooltip features carrying the file's raw values.
+`LinearStrandedWiggleDisplay` extends the stock display model and overrides
+only the single-series spots: renderer name, tooltip, `graphType`/`canHaveFill`
+(which test for stock renderer names), axis ticks, and the scale.
+
+The log option is a signed `log2(x+1)` applied **in the adapter**, not the
+renderer: the display adds `strandedScale` to `adapterProps()`, and both the
+stats RPC and the render call pass those props to `getFeatures` as options, so
+autoscale is computed from exactly the values drawn. The display reports
+`scaleType` as linear to the stock machinery and labels the axis in raw units
+itself (YScaleBar prints tick *values* as labels, so the values are label
+strings and `position` maps them back).
+
+`.claude/skills/run-app/scripts/verify-stranded.sh` covers all of this:
+zoomed-in, zoomed-out, a region with both strands at once, the two-strand
+tooltip, and the log scale. The pre-renderer code fails the zoomed-out and
+both-strands checks.
 
 ### Importing from JBrowse packages
 
@@ -164,6 +191,17 @@ Reference their pluggable elements by name in config (`'QuantitativeTrack'`,
 `'LinearWiggleDisplay'`, `'BigWigAdapter'`) rather than importing them. Their
 source is still worth reading as reference; `MultiWiggleAdapter` is the closest
 model for a multi-file adapter.
+
+To *extend* one of their types, go through the running plugin instead:
+`pluginManager.getPlugin('WigglePlugin').exports` hands out
+`linearWiggleDisplayModelFactory`, `xyPlotRendererConfigSchema` and `utils`,
+and `pluginManager.getDisplayType('LinearWiggleDisplay')` /
+`getRendererType(...)` give registered types (inside an `add*Type` callback;
+renderers are created before displays). This is how `StrandedBigWigPlugin`
+builds on the stock wiggle display. A model composed with a JBrowse model must
+use `types` from `@jbrowse/mobx-state-tree` (the copy JBrowse itself uses,
+resolvable as a transitive dependency like `@mui/icons-material`), not this
+repo's `mobx-state-tree`.
 
 ### The MST double-cast (important, appears in every state model)
 
@@ -239,11 +277,6 @@ before merging to `main`.
 
 ## Known stale bits
 
-- `.claude/skills/run-app/scripts/verify-stranded.sh`'s zoomed-out check is
-  sensitive to the genome view's width: at some widths a narrow red (reverse)
-  spike is drawn above the axis and the check fails. This reproduces on the
-  pre-redesign layout too (a 1300px window instead of 1600px), so it is a
-  rendering/adapter issue to investigate, not a layout regression.
 - `README.md` predates the current setup: it claims `@jbrowse/react-linear-genome-view`
   and JBrowse v3.1.0. The code actually uses `@jbrowse/react-app2` at v4.1.14
   (see `package.json`). Trust `package.json` over the README.

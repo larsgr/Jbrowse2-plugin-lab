@@ -6,31 +6,42 @@ import { map } from 'rxjs/operators'
 import type { BaseOptions } from '@jbrowse/core/data_adapters/BaseAdapter/BaseOptions'
 import type { Feature } from '@jbrowse/core/util'
 import type { Region } from '@jbrowse/core/util/types'
+import { transformScore, type StrandedScale } from './scale'
 
 interface StrandedSubAdapter {
   dataAdapter: BaseFeatureDataAdapter
   source: string
   strand: 1 | -1
   /** multiplied into every score: -1 flips the reverse strand below the axis */
-  scale: 1 | -1
+  sign: 1 | -1
 }
+
+/**
+ * Render and stats requests carry the display's props as their options, which
+ * is how the display's scale setting reaches the adapter. Transforming here
+ * rather than in the renderer keeps autoscale honest: the stats are computed
+ * from the same values that are drawn.
+ */
+type StrandedOptions = BaseOptions & { strandedScale?: StrandedScale }
 
 /**
  * Reads a forward/reverse pair of BigWig files as a single quantitative track.
  *
- * The only real work here is negating the reverse strand. Everything that
- * makes the result look like a stranded coverage plot is already in JBrowse's
- * wiggle stack and comes along for free once the scores have the right sign:
+ * The adapter owns the data side of a stranded plot: it negates the reverse
+ * strand, applies the display's value transform (see `scale.ts`), and tags
+ * every feature with its strand. Drawing is left to StrandedXYPlotRenderer.
  *
- *   - XYPlotRenderer draws negative scores downward from the origin, which is
- *     the "upside down" half of the request.
- *   - getColorCallback splits at `bicolorPivotValue` (0 by default), so the
- *     negated strand picks up `negColor` instead of `posColor`.
- *   - BaseFeatureDataAdapter derives quantitative stats by scanning
- *     getFeatures, so autoscale sees the negated values and produces a domain
- *     spanning both strands. That is why this class deliberately does NOT
- *     implement getRegionQuantitativeStats: doing so would mean re-deriving
- *     (and re-signing) numbers the base class already gets right.
+ * The stock XYPlotRenderer is not enough on its own. Its whiskers pass shares
+ * one color cache across all features, and the two files' features arrive
+ * interleaved, so reverse-strand colors bleed into forward-strand bars when
+ * both strands have signal at the same position. It also keeps one feature
+ * per pixel for the tooltip, so hovering reports whichever strand came first.
+ *
+ * BaseFeatureDataAdapter derives quantitative stats by scanning getFeatures,
+ * so autoscale sees the negated, transformed values and produces a domain
+ * spanning both strands. That is why this class deliberately does NOT
+ * implement getRegionQuantitativeStats: doing so would mean re-deriving (and
+ * re-signing) numbers the base class already gets right.
  */
 export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
   // No 'hasGlobalStats': global autoscale would need getGlobalStats, which the
@@ -60,13 +71,13 @@ export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
         location: this.getConf('forwardBigWigLocation'),
         source: 'forward',
         strand: 1 as const,
-        scale: 1 as const,
+        sign: 1 as const,
       },
       {
         location: this.getConf('reverseBigWigLocation'),
         source: 'reverse',
         strand: -1 as const,
-        scale: (negate ? -1 : 1) as 1 | -1,
+        sign: (negate ? -1 : 1) as 1 | -1,
       },
     ]
 
@@ -80,7 +91,7 @@ export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
           dataAdapter: dataAdapter as BaseFeatureDataAdapter,
           source: spec.source,
           strand: spec.strand,
-          scale: spec.scale,
+          sign: spec.sign,
         }
       }),
     )
@@ -94,14 +105,17 @@ export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
     return [...new Set(names.flat())]
   }
 
-  getFeatures(region: Region, opts: BaseOptions = {}) {
+  getFeatures(region: Region, opts: StrandedOptions = {}) {
+    const scale = opts.strandedScale ?? 'linear'
     return ObservableCreate<Feature>(async observer => {
       const adapters = await this.getAdapters()
       merge(
-        ...adapters.map(({ dataAdapter, source, strand, scale }) =>
+        ...adapters.map(({ dataAdapter, source, strand, sign }) =>
           dataAdapter.getFeatures(region, opts).pipe(
             map(feature => {
               const data = feature.toJSON()
+              const score = data.score as number
+              const plot = (v: number) => transformScore(v * sign, scale)
               return new SimpleFeature({
                 ...data,
                 // Both BigWigs number their features independently, so their
@@ -109,25 +123,32 @@ export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
                 // make one strand overwrite the other.
                 uniqueId: `${source}-${feature.id()}`,
                 source,
+                // StrandedXYPlotRenderer draws each strand in its own pass and
+                // the tooltip reports them side by side; both key off this.
                 strand,
-                score: (data.score as number) * scale,
+                score: plot(score),
+                // The values as stored in the file, before the sign flip and
+                // the log transform, so the tooltip can report real coverage.
+                rawScore: score,
                 // Zoomed out far enough, BigWigAdapter stops returning raw
-                // values and returns summary bins carrying minScore/maxScore.
-                // drawXY reads those two fields directly - in the default
-                // 'whiskers' mode they are what it draws - so negating only
-                // `score` leaves the reverse strand's whiskers positive and it
-                // renders ABOVE the axis in posColor. The bug is invisible at
-                // high zoom, where there is no summary and `score` is all the
-                // renderer has.
+                // values and returns summary bins carrying minScore/maxScore,
+                // which the renderer draws as whiskers. Every field it reads
+                // has to be transformed, not just `score`.
                 //
                 // Negating an interval also reverses it: [min, max] becomes
                 // [-max, -min]. Swapping is not cosmetic - without it minScore
                 // would exceed maxScore and the whisker would be drawn upside
-                // down.
-                ...(data.summary && scale === -1
+                // down. The log transform is monotonic, so it keeps the order.
+                ...(data.summary
                   ? {
-                      minScore: -(data.maxScore as number),
-                      maxScore: -(data.minScore as number),
+                      rawMinScore: data.minScore,
+                      rawMaxScore: data.maxScore,
+                      minScore: plot(
+                        (sign === 1 ? data.minScore : data.maxScore) as number,
+                      ),
+                      maxScore: plot(
+                        (sign === 1 ? data.maxScore : data.minScore) as number,
+                      ),
                     }
                   : {}),
               })
@@ -136,6 +157,20 @@ export default class StrandedBigWigAdapter extends BaseFeatureDataAdapter {
         ),
       ).subscribe(observer)
     }, opts.stopToken)
+  }
+
+  /**
+   * Stats are derived from getFeatures by the base class, so they already
+   * come back in the scale that was requested. The scale is echoed back so
+   * the display can tell stats computed for the old scale from the new ones
+   * and hold off drawing until the domain matches the data.
+   */
+  async getMultiRegionQuantitativeStats(
+    regions: Region[] = [],
+    opts: StrandedOptions = {},
+  ) {
+    const stats = await super.getMultiRegionQuantitativeStats(regions, opts)
+    return { ...stats, strandedScale: opts.strandedScale ?? 'linear' }
   }
 
   /**

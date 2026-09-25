@@ -109,9 +109,16 @@ function scanCanvases() {
 // mode. An adapter that negates `score` alone passes the first case and draws
 // the reverse strand above the axis in the second, so checking one zoom proves
 // nothing about the other.
+//
+// The third case has heavy signal on BOTH strands at the same positions, at a
+// zoom where one file returns summary bins while the other can still return
+// raw values. The stock XYPlotRenderer painted red bars inside the blue area
+// there (its whiskers color cache leaked across the interleaved strands); it
+// is the case that tells StrandedXYPlotRenderer apart from the stock one.
 const CASES = [
   { name: 'zoomed in (raw values)', region: 'ssa01:56,174,000..56,190,000', shot: '04-zoomed-in' },
   { name: 'zoomed out (summary bins)', region: '1:158,800,000..159,800,000', shot: '05-zoomed-out' },
+  { name: 'both strands at one position', region: '9:79,192,811..79,404,099', shot: '06-both-strands' },
 ]
 
 let failures = 0
@@ -171,6 +178,56 @@ for (const c of CASES) {
     console.log(`  FAIL: strands overlap vertically - reverse strand is not below the axis`)
     failures++
   }
+}
+
+// The tooltip must report both strands at once. The stock one takes a single
+// feature, so over a position with signal on both strands it showed one value.
+{
+  console.log('\ntooltip over the last region')
+  // Blocks extend past the view on both sides (the first one starts behind
+  // the guide sidebar), so sweep the on-screen part of the track rather than
+  // a block's own box, until both strands have a value under the mouse.
+  const both = /\+ strand\s*[\d,.]+[\s\S]*− strand\s*[\d,.]+/
+  const view = await page.locator('[data-testid="stranded-wiggle-rendering"]').first().boundingBox()
+  const canvas = await page.locator('[data-testid^="view-container-"]').first().boundingBox()
+  let text = ''
+  if (view && canvas) {
+    for (let x = canvas.x + 60; x < canvas.x + canvas.width - 10 && !both.test(text); x += 8) {
+      await page.mouse.move(x, view.y + view.height / 2)
+      await page.waitForTimeout(150)
+      text = await page.locator('[data-testid="stranded-tooltip"]').first().innerText({ timeout: 500 }).catch(() => '')
+    }
+  }
+  await page.screenshot({ path: `${SHOTS}/07-tooltip.png` })
+  console.log('  ' + text.replace(/\n/g, ' | '))
+  if (both.test(text)) console.log('  PASS: tooltip reports both strands')
+  else { console.log('  FAIL: no tooltip with values for both strands'); failures++ }
+  await page.mouse.move(0, 0)
+}
+
+// Log scale: the stock d3 log scale is undefined below zero, so this is the
+// display's own signed log2(x+1). Switch it from the track menu and check the
+// strands are still split at the axis and the axis is labelled in raw units.
+{
+  console.log('\nlog scale')
+  await page.locator('[data-testid="track_menu_icon"]').first().click()
+  const item = t => page.locator('[role="menu"]').last().getByText(t, { exact: true })
+  await item('Score').click()
+  await item('Scale type').click()
+  await item('Log, log2(x+1)').click()
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(8000)
+  let result = null
+  const deadline = Date.now() + 60000
+  while (Date.now() < deadline && !(result = await scanCanvases())) await page.waitForTimeout(3000)
+  await page.screenshot({ path: `${SHOTS}/08-log-scale.png` })
+  const labels = await page.locator('svg text').allTextContents()
+  console.log('  axis labels:', labels.join(' '))
+  if (!result) { console.log('  FAIL: no canvas carrying both strand colors'); failures++ }
+  else if (result.posMax > result.negMin) { console.log('  FAIL: strands overlap on the log scale'); failures++ }
+  else console.log(`  PASS: all blue above all red (blue y ${result.posMin}..${result.posMax}, red y ${result.negMin}..${result.negMax})`)
+  if (labels.some(l => /^(10|100|1k|10k)$/.test(l))) console.log('  PASS: axis labelled in raw units')
+  else { console.log('  FAIL: axis not labelled in raw units'); failures++ }
 }
 
 console.log('\nsalmobase requests proxied:', n)
