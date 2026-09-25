@@ -10,7 +10,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  *   - Every LinearGenomeView gets `setHideHeader(true)`, JBrowse's own switch
  *     for the overview/navigation header. The view then shows its compact
  *     floating controls (view menu, zoom out/in) in their place, and the view
- *     title bar keeps its menu too, so nothing becomes unreachable; panning and zooming are also on touch.
+ *     title bar keeps its menu too, so nothing becomes unreachable;
+ *     panning and zooming are also on touch.
  *   - The document asks for real full screen where the browser allows it
  *     (Android), which also hides the address bar. iPhone Safari has no
  *     element full screen, so there it is the CSS alone.
