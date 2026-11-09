@@ -132,6 +132,26 @@ block's box hovers nothing and the tooltip check fails for the wrong reason. Lik
 `smoke.sh` it runs the driver out of the playwright temp dir, since `playwright`
 is not resolvable from the repo root.
 
+`scripts/verify-condition-pileups.sh` does the same for ConditionPileupPlugin
+(chromatin states, RNA-seq and ChIP-seq condition pile-ups, ~100 files). It
+opens the prototype locus from the plugin guide card, then compares each
+tooltip with the same position read straight from the files in node through
+the repo's own `@gmod/bbi`: state counts across the 21 BigBeds, a row's state,
+per-condition +/− values and combined totals at single-base zoom. It also
+expands, collapses, switches **Score → Row scale**, and zooms to 4 Mb.
+
+Two traps it works around:
+
+- **"Every block has drawn" is not "the track has rendered".** A block that
+  has not started rendering has no canvas yet, only JBrowse's hatched loading
+  placeholder, so counting finished canvases among the blocks that exist
+  passes early. Also require no `[data-testid="loading-overlay"]` in the
+  display.
+- **The egress proxy rate-limits.** With the page and the node-side ground
+  truth both fetching, it answers 503. Retry with backoff in the route
+  handler and in node (`RemoteFile(url, { fetch })`), and read the 40 RNA
+  files one condition at a time.
+
 *Serving locally* is still simpler for small files:
 
 ```bash
