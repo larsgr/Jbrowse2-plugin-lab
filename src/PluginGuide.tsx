@@ -8,6 +8,7 @@
  * exercises exactly the same code path as the JBrowse menu bar does - which is
  * the part a phone user can't comfortably reach.
  */
+import { CONDITION_PILEUP_TRACK_IDS, PROTOTYPE_LOCUS } from './conditionTracks'
 
 interface MenuItem {
   label?: string
@@ -26,6 +27,7 @@ export interface LabSession {
     id: string
     type: string
     showTrack?: (trackId: string) => void
+    navToLocString?: (locString: string) => Promise<void>
     setTrackLabels?: (setting: string) => void
     hideHeader?: boolean
     setHideHeader?: (hide: boolean) => void
@@ -110,6 +112,34 @@ const PLUGINS: PluginCard[] = [
       }
     },
   },
+  {
+    name: 'ConditionPileupPlugin',
+    icon: '🗂️',
+    extensionPoint: 'Adapters + renderers + displays',
+    description:
+      'Many conditions in one track: Aqua-Faang chromatin states (21 ' +
+      'ChromHMM BigBeds), stranded RNA-seq and ChIP-seq (20 tissue ' +
+      'conditions each). Each opens as a combined pile-up; press Expand on ' +
+      'the track for one row per condition. Hover for per-condition values.',
+    path: 'Track selector → Aqua-Faang condition pile-ups',
+    actionLabel: 'Open at prototype locus',
+    run: s => {
+      const view = s.views.find(v => v.type === 'LinearGenomeView')
+      try {
+        if (!view?.showTrack || !view.navToLocString) {
+          throw new Error('no linear genome view is open')
+        }
+        for (const trackId of CONDITION_PILEUP_TRACK_IDS) {
+          view.showTrack(trackId)
+        }
+        view.navToLocString(PROTOTYPE_LOCUS).catch((e: unknown) => {
+          s.notify(`Could not go to ${PROTOTYPE_LOCUS}: ${String(e)}`, 'warning')
+        })
+      } catch (e) {
+        s.notify(`Could not show the condition tracks: ${String(e)}`, 'warning')
+      }
+    },
+  },
 ]
 
 export default function PluginGuide({
@@ -124,7 +154,7 @@ export default function PluginGuide({
       <header className="guide-header">
         <h1>🧬 JBrowse2 Plugin Lab</h1>
         <p>
-          Four example plugins, each on a different JBrowse2 extension point.
+          Five example plugins, each on a different JBrowse2 extension point.
           Launch one below, or find it in the browser's menus.
         </p>
       </header>

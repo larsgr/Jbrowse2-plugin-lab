@@ -4,6 +4,8 @@ import HelloWorldPlugin from './plugins/HelloWorldPlugin'
 import FeatureCountPlugin from './plugins/FeatureCountPlugin'
 import CustomViewPlugin from './plugins/CustomViewPlugin'
 import StrandedBigWigPlugin from './plugins/StrandedBigWigPlugin'
+import ConditionPileupPlugin from './plugins/ConditionPileupPlugin'
+import { conditionPileupTracks } from './conditionTracks'
 import ExtensionIcon from '@mui/icons-material/Extension'
 import ViewTimelineIcon from '@mui/icons-material/ViewTimeline'
 import FullscreenIcon from '@mui/icons-material/Fullscreen'
@@ -245,6 +247,9 @@ const config = {
       ],
     },
     ...bodyMapStrandedTracks,
+    // Chromatin states, RNA-seq and ChIP-seq across Aqua-Faang conditions,
+    // each a combined pile-up that expands into a row per condition.
+    ...conditionPileupTracks,
   ],
   defaultSession: {
     name: 'Plugin Lab Demo',
@@ -312,6 +317,7 @@ function App() {
         FeatureCountPlugin,
         CustomViewPlugin,
         StrandedBigWigPlugin,
+        ConditionPileupPlugin,
       ],
     })
     // On a phone-width view the default overlapping track label covers about

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 A lab for experimenting with JBrowse2 plugin extension points. The whole app is a
-demo harness: `src/App.tsx` embeds the **full JBrowse app shell** and loads three
+demo harness: `src/App.tsx` embeds the **full JBrowse app shell** and loads five
 example plugins, each demonstrating a different extension point. Deployed to
 GitHub Pages at https://larsgr.github.io/Jbrowse2-plugin-lab/.
 
@@ -28,7 +28,9 @@ type-check. There are no tests, so there is no "run a single test" workflow.
 To verify a plugin actually works, run it in a browser:
 
 ```bash
-.claude/skills/run-app/scripts/smoke.sh   # dev server + headless Chromium, screenshots all three plugins
+.claude/skills/run-app/scripts/smoke.sh   # dev server + headless Chromium, screenshots the menu/widget/view plugins
+.claude/skills/run-app/scripts/verify-stranded.sh            # StrandedBigWigPlugin against live data
+.claude/skills/run-app/scripts/verify-condition-pileups.sh   # ConditionPileupPlugin against live data
 ```
 
 See `.claude/skills/run-app/SKILL.md` (the `run-app` skill) for the environment
@@ -109,7 +111,7 @@ Two lifecycle methods split the work:
   menu items go, and it is how the user actually reaches a widget or view.
   Always guard with `isAbstractMenuManager(pluginManager.rootModel)` first.
 
-The three examples map to the three extension points:
+The examples map to extension points:
 
 | Plugin | Extension point | Reached via |
 |---|---|---|
@@ -117,6 +119,7 @@ The three examples map to the three extension points:
 | `CustomViewPlugin` | `ViewType` (main visualization panel) | Add → Open Sequence Stats View |
 | `FeatureCountPlugin` | `configure()` only, no new types | Tools → Count Tracks in View |
 | `StrandedBigWigPlugin` | `AdapterType` + `RendererType` + `DisplayType` | track config, then the track selector |
+| `ConditionPileupPlugin` | 2 × (`AdapterType` + `RendererType` + `DisplayType`) | track selector → Aqua-Faang condition pile-ups (guide: Open at prototype locus) |
 
 ### Writing an AdapterType (`StrandedBigWigPlugin`)
 
@@ -184,6 +187,63 @@ purpose: for a moment after switching, the domain is still in linear units,
 and anything that reads it as log2 overflows past ~1024 (2^x = Infinity). The
 script fails on page errors and on errors MobX logs from reactions.
 
+### Condition pile-up tracks (`ConditionPileupPlugin`)
+
+Replicates the lab's prototype browser: many conditions (tissues, stages) in
+one track, shown as a combined pile-up that expands into one row per
+condition. Two track kinds share the layout, mixin and overlay in `shared/`:
+
+- **Chromatin states** — `MultiBigBedAdapter` (a ChromHMM BigBed per
+  condition) → `ChromatinStateRenderer` → `LinearChromatinStateDisplay`
+  (FeatureTrack). Pile-up = per position, how many conditions are in each
+  state, stacked in palette order.
+- **Signal** — `MultiConditionBigWigAdapter` (a forward/reverse BigWig pair
+  per condition for RNA-seq, or one BigWig for ChIP-seq) →
+  `ConditionWiggleRenderer` → `LinearConditionWiggleDisplay`
+  (QuantitativeTrack). Pile-up = conditions stacked as areas, + up, − down.
+
+The track configs (Aqua-Faang data on salmobase, replicate 1 only, raw
+coverage for RNA-seq and nf-core's 1M-read scaling for ChIP) live in
+`src/conditionTracks.ts`, not inline in `App.tsx`. What generalises:
+
+- **Resample to pixel columns before stacking.** Different files' intervals
+  never line up (zoomed in, each BigWig has its own bedGraph runs; zoomed
+  out, its own zoom levels), so both renderers first reduce everything to one
+  value (or one dominant non-background state) per condition per pixel
+  column, then draw. The raster is returned with the image, and the block
+  component answers hovers from it — tooltips cost no refetch.
+- **One layout object for canvas and HTML.** The display computes
+  `pileupLayout` (legend band, pile-up, rows) and passes the same object to
+  the renderer as a render prop and to the label overlay, so labels cannot
+  drift from their rows. The track's `height` is derived from it; `setHeight`
+  and `resizeHeight` are both overridden (the base `resizeHeight` calls its
+  own `setHeight` through `this`, bypassing an override) so dragging the
+  track edge resizes rows when expanded and the pile-up when collapsed.
+- **`prefersOffset: true`** moves JBrowse's track-name label above the track
+  instead of over its top-left corner, where it covered the legend and
+  caption. The stock multi-row wiggle does the same.
+- **Two scales, one stats call.** The adapter's
+  `getMultiRegionQuantitativeStats` reports the largest single condition as
+  `scoreMin/scoreMax` — the stock wiggle model turns that into `domain`
+  (rows), with autoscale types and min/max intact — plus `stackedMin/Max`,
+  which the display keeps by overriding `updateQuantitativeStats`. Unlike
+  `StrandedBigWigPlugin`, the log option is applied in the renderer, not the
+  adapter: the pile-up adds values, and a sum of logs is not a log of a sum.
+- **Stable stacking order.** States missing from the configured palette
+  (display config `states`) are drawn in their file's itemRgb color, sorted by
+  name — order of appearance differs per block, and blocks must stack alike.
+  The block component reports such states back so the legend lists them.
+- The chromatin display raises `maxFeatureScreenDensity` (features per px,
+  summed over every file) to 60: rendering is per pixel, so only fetching is
+  expensive. A 4 Mb window draws; a whole chromosome shows JBrowse's "zoom in
+  or force load" guard, and the overlay hides itself while it does.
+
+`.claude/skills/run-app/scripts/verify-condition-pileups.sh` checks the
+tooltips against the BigBeds/BigWigs read independently in node via
+`@gmod/bbi` (state counts per condition, per-condition +/− values, combined
+totals), expand/collapse, the row-scale menu, and a 4 Mb window. Swapping the
+strands in the rasterizer fails it.
+
 ### Importing from JBrowse packages
 
 Only `@jbrowse/core` and `@jbrowse/react-app2` are resolvable from the project
@@ -201,7 +261,10 @@ To *extend* one of their types, go through the running plugin instead:
 and `pluginManager.getDisplayType('LinearWiggleDisplay')` /
 `getRendererType(...)` give registered types (inside an `add*Type` callback;
 renderers are created before displays). This is how `StrandedBigWigPlugin`
-builds on the stock wiggle display. A model composed with a JBrowse model must
+builds on the stock wiggle display. `getPlugin('LinearGenomeViewPlugin').exports`
+likewise hands out `BaseLinearDisplay`, `baseLinearDisplayConfigSchema` and
+`BaseLinearDisplayComponent`, which `ConditionPileupPlugin` builds its
+chromatin display on. A model composed with a JBrowse model must
 use `types` from `@jbrowse/mobx-state-tree` (the copy JBrowse itself uses,
 resolvable as a transitive dependency like `@mui/icons-material`), not this
 repo's `mobx-state-tree`.
